@@ -1,3 +1,5 @@
+<div align="center">
+
 # AI Contract Risk Analyzer 🤖⚖️
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
@@ -8,16 +10,18 @@
 > **Democratizing Legal Intelligence Through AI**  
 > Comprehensive contract risk analysis using Legal-BERT, multi-model NLP, and LLM integration
 
+</div>
+
+
 ## 🎯 Overview
 
-The AI Contract Risk Analyzer is a production-grade legal document analysis platform that leverages state-of-the-art NLP and machine learning to provide instant, comprehensive contract risk assessment. Built with Legal-BERT for clause understanding, semantic embeddings for similarity matching, and LLM integration for natural language explanations, the system achieves **94% agreement with expert legal review** while maintaining **sub-30-second analysis times**.
+The AI Contract Risk Analyzer is a production-grade legal document analysis platform that leverages state-of-the-art NLP and machine learning to provide instant, comprehensive contract risk assessment. Built with Legal-BERT for clause understanding, semantic embeddings for similarity matching, and LLM integration for natural language explanations.
 
 ### Key Features
 
 - 📄 **Multi-Format Support**: PDF, DOCX document processing
 - 🔍 **12+ Contract Categories**: Employment, NDA, Lease, Service agreements, etc.
 - ⚡ **Sub-30s Analysis**: Real-time risk scoring and clause extraction
-- 🎯 **94% Accuracy**: Agreement with expert legal review
 - 🔒 **Privacy-First**: Ephemeral processing, zero data retention
 - 🌐 **LLM Integration**: Ollama, OpenAI, Anthropic support
 - 📊 **Comprehensive Reports**: Executive summaries, negotiation points, market comparisons
@@ -34,7 +38,6 @@ The AI Contract Risk Analyzer is a production-grade legal document analysis plat
 - [Configuration](#-configuration)
 - [Development](#-development)
 - [Performance](#-performance)
-- [Contributing](#-contributing)
 - [License](#-license)
 
 ---
@@ -234,7 +237,7 @@ GPU: Optional (3x speedup with NVIDIA GPU + CUDA 11.8+)
 
 ```bash
 # Clone repository
-git clone https://github.com/yourusername/contract-guard-ai.git
+git clone https://github.com/itobuztech/contract-guard-ai.git
 cd contract-guard-ai
 
 # Create virtual environment
@@ -379,7 +382,6 @@ curl "http://localhost:8000/api/v1/jobs/abc-123-def-456"
     "unfavorable_terms": [...],
     ...
   }
-}
 ```
 
 ---
@@ -390,7 +392,7 @@ curl "http://localhost:8000/api/v1/jobs/abc-123-def-456"
 
 #### 1. Analyze Contract (Async)
 
-```http
+```bash
 POST /api/v1/analyze
 Content-Type: multipart/form-data
 
@@ -414,7 +416,7 @@ Response: 202 Accepted
 
 #### 2. Get Job Status
 
-```http
+```bash
 GET /api/v1/jobs/{job_id}
 
 Response: 200 OK
@@ -437,12 +439,11 @@ Response: 200 OK
     "executive_summary": "text",
     "metadata": {...}
   }
-}
 ```
 
 #### 3. Health Check
 
-```http
+```bash
 GET /api/v1/health
 
 Response: 200 OK
@@ -452,97 +453,6 @@ Response: 200 OK
   "timestamp": "ISO-8601",
   "models_loaded": 2,
   "gpu_available": true
-}
-```
-
-#### 4. Quick Validation
-
-```http
-POST /api/v1/validate
-Content-Type: multipart/form-data
-
-Parameters:
-  - file: File (required)
-
-Response: 200 OK
-{
-  "is_valid": true,
-  "validation_type": "high_confidence",
-  "message": "Strong contract indicators (score: 45)",
-  "scores": {
-    "total": 45,
-    "indicators": 30,
-    "structural": 15
-  },
-  "features": {
-    "has_signature_block": true,
-    "has_effective_date": true,
-    "has_party_identification": true
-  }
-}
-```
-
-#### 5. List Jobs
-
-```http
-GET /api/v1/jobs?limit=10
-
-Response: 200 OK
-[
-  {
-    "job_id": "uuid",
-    "status": "completed",
-    "created_at": "ISO-8601",
-    ...
-  },
-  ...
-]
-```
-
-#### 6. Delete Job
-
-```http
-DELETE /api/v1/jobs/{job_id}
-
-Response: 200 OK
-{
-  "message": "Job deleted successfully",
-  "job_id": "uuid"
-}
-```
-
-#### 7. Get Contract Categories
-
-```http
-GET /api/v1/categories
-
-Response: 200 OK
-[
-  "employment",
-  "consulting",
-  "nda",
-  "technology",
-  "intellectual_property",
-  "real_estate",
-  "financial",
-  "business",
-  "sales",
-  "service_agreement",
-  "vendor",
-  "agency"
-]
-```
-
-#### 8. Get Market Standards
-
-```http
-GET /api/v1/market-standards/{category}
-
-Response: 200 OK
-{
-  "reasonable": "Market-standard reasonable clause text...",
-  "standard": "Typical market standard clause text...",
-  "aggressive": "Aggressive/unfavorable clause text..."
 }
 ```
 
@@ -739,7 +649,6 @@ asyncio: concurrent processing
 contract-guard-ai/
 │
 ├── app.py                      # FastAPI application (main entry)
-├── launch.py                   # Launch script (API + frontend)
 ├── requirements.txt            # Python dependencies
 ├── .env.example                # Environment variables template
 ├── README.md                   # This file
@@ -792,15 +701,8 @@ contract-guard-ai/
 │
 ├── uploads/                    # Temporary upload storage
 │
-├── docs/                       # Documentation
-│   ├── BLOGPOST.md
-│   ├── WHITEPAPER.md
-│   └── API.md
-│
-└── tests/                      # Unit and integration tests
-    ├── test_classifier.py
-    ├── test_extractor.py
-    └── test_risk_analyzer.py
+└── docs/                       # Documentation
+   └── BLOGPOST.md
 ```
 
 ### Mathematical Foundations
@@ -810,6 +712,7 @@ contract-guard-ai/
 ```python
 # Overall risk score calculation
 R_overall = Σ (α_i × r_i)  for i in [1, n]
+
 
 Where:
   α_i = weight for risk category i (Σα_i = 1)
@@ -823,11 +726,14 @@ if has_clauses:
     r_i = (0.50 × clause_score +
            0.20 × keyword_score +
            0.15 × pattern_score +
-           0.15 × missing_score)
+           0.15 × missing_score
+          )
+
 else:
     r_i = (0.40 × keyword_score +
            0.35 × pattern_score +
-           0.25 × missing_score)
+           0.25 × missing_score
+          )
 ```
 
 #### Semantic Similarity
@@ -850,32 +756,11 @@ Where:
 P(correct | score) = 1 / (1 + exp(A × score + B))
 
 Where:
-  A, B = parameters learned from validation data
+  A, B  = parameters learned from validation data
   score = raw model confidence
 ```
 
-### Performance Characteristics
-
-#### Latency Benchmarks
-
-| Operation | p50 | p95 | p99 |
-|-----------|-----|-----|-----|
-| Document Upload | 120ms | 250ms | 380ms |
-| Contract Classification | 180ms | 320ms | 450ms |
-| Clause Extraction | 2.1s | 4.8s | 7.2s |
-| Risk Analysis | 1.8s | 3.2s | 4.5s |
-| LLM Interpretation (10 clauses) | 8.5s | 15.2s | 22.1s |
-| **Full Pipeline** | **22.3s** | **38.7s** | **52.4s** |
-
-#### Throughput
-
-```
-Concurrent Analyses: 50+ jobs
-API Requests/Second: 1,200+
-Model Inference Batch Size: 8
-```
-
-#### Memory Usage
+### Memory Usage
 
 ```
 Legal-BERT Model: ~450MB
@@ -883,15 +768,6 @@ Sentence-BERT Model: ~100MB
 LLM Manager: ~50MB
 Total (Idle): ~600MB
 Total (Peak): ~1.2GB
-```
-
-#### Accuracy Metrics
-
-```
-Clause Extraction F1: 0.91
-Classification Accuracy: 0.92
-Risk Score Correlation: 0.87 (Spearman)
-Agreement with Experts: 94% (±10 points)
 ```
 
 ---
@@ -1187,209 +1063,6 @@ import pdb; pdb.set_trace()
 }
 ```
 
----
-
-## 📊 Performance
-
-### Optimization Techniques
-
-#### 1. Model Caching (LRU)
-```python
-# models cached in memory with LRU eviction
-@lru_cache(maxsize=3)
-def get_model(model_type):
-    return load_model(model_type)
-
-# Result: 3.2s → 50ms for subsequent requests
-```
-
-#### 2. Async Processing
-```python
-# Background task for long-running analysis
-@app.post("/api/v1/analyze")
-async def analyze(background_tasks: BackgroundTasks, file: UploadFile):
-    job_id = create_job()
-    background_tasks.add_task(process_analysis, job_id, file)
-    return {"job_id": job_id}  # Immediate response
-
-# Result: API response < 200ms, analysis in background
-```
-
-#### 3. Batch Inference
-```python
-# Process multiple clauses in single batch
-clause_embeddings = model.encode(
-    [clause.text for clause in clauses],
-    batch_size=8,
-    show_progress_bar=False
-)
-
-# Result: 8 clauses in 2.1s vs 1 clause × 8 = 16s
-```
-
-#### 4. Lazy Loading
-```python
-# Load models only when needed
-def _lazy_load(self):
-    if self.model is None:
-        self.model = load_model()
-
-# Result: Faster startup (0s → models load on first use)
-```
-
-### Profiling
-
-```bash
-# Profile API endpoint
-python -m cProfile -o profile.stats app.py
-
-# Analyze results
-python -c "
-import pstats
-p = pstats.Stats('profile.stats')
-p.strip_dirs()
-p.sort_stats('cumulative')
-p.print_stats(20)
-"
-
-# Memory profiling
-pip install memory_profiler
-python -m memory_profiler app.py
-```
-
-### Load Testing
-
-```bash
-# Install Apache Bench
-sudo apt-get install apache2-utils  # Ubuntu
-brew install apache2  # macOS
-
-# Test health endpoint
-ab -n 1000 -c 10 http://localhost:8000/api/v1/health
-
-# Results:
-# Requests per second: 1,247 [#/sec] (mean)
-# Time per request: 8.0 [ms] (mean)
-# Time per request: 0.8 [ms] (mean, across all concurrent requests)
-
-# Test analysis endpoint (with file)
-# Use locust for complex scenarios
-pip install locust
-
-# locustfile.py
-from locust import HttpUser, task, between
-
-class ContractUser(HttpUser):
-    wait_time = between(1, 3)
-    
-    @task
-    def analyze_contract(self):
-        with open("test_contract.pdf", "rb") as f:
-            self.client.post("/api/v1/analyze", 
-                           files={"file": f})
-
-# Run: locust -f locustfile.py
-```
-
----
-
-## 🤝 Contributing
-
-We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.md) for details.
-
-### How to Contribute
-
-1. **Fork the repository**
-```bash
-git clone https://github.com/yourusername/contract-guard-ai.git
-cd contract-guard-ai
-git checkout -b feature/my-new-feature
-```
-
-2. **Make changes**
-- Follow PEP 8 style guide
-- Add tests for new features
-- Update documentation
-- Add type hints
-
-3. **Test your changes**
-```bash
-pytest
-flake8 .
-black --check .
-mypy .
-```
-
-4. **Submit Pull Request**
-- Clear description of changes
-- Reference any related issues
-- Include screenshots for UI changes
-- Ensure CI passes
-
-### Contribution Areas
-
-- 🐛 **Bug fixes**: Report or fix issues
-- ✨ **New features**: Add contract categories, improve extraction
-- 📚 **Documentation**: Improve docs, add examples
-- 🧪 **Testing**: Increase test coverage
-- 🌍 **Internationalization**: Add language support
-- ⚡ **Performance**: Optimize algorithms, reduce latency
-
-### Code of Conduct
-
-- Be respectful and inclusive
-- Provide constructive feedback
-- Focus on what is best for the community
-- Show empathy towards other community members
-
----
-
-## 🔒 Security
-
-### Reporting Security Issues
-
-**Do NOT create public GitHub issues for security vulnerabilities.**
-
-Email: security@contractguardai.com
-
-We'll respond within 48 hours and work with you to resolve the issue.
-
-### Security Measures
-
-1. **Data Privacy**
-   - Ephemeral document processing (deleted after analysis)
-   - No training on user data
-   - TLS 1.3 encryption for all transfers
-
-2. **Input Validation**
-   - File type verification
-   - File size limits (10MB max)
-   - Content validation before processing
-
-3. **Rate Limiting**
-   - Token bucket algorithm
-   - 100 requests/hour per IP (adjustable)
-   - API key authentication (enterprise)
-
-4. **Dependencies**
-   - Regular security audits
-   - Automated vulnerability scanning
-   - Monthly dependency updates
-
-```bash
-# Check for security issues
-pip install safety
-safety check
-
-# Audit dependencies
-pip-audit
-
-# Update dependencies
-pip install --upgrade -r requirements.txt
-```
-
----
-
 ## 📝 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
@@ -1436,185 +1109,13 @@ SOFTWARE.
 - **PyMuPDF**: Artifex Software
 - **spaCy**: Explosion AI team
 
-### Community
-
-- All contributors who've submitted issues, PRs, and feedback
-- Legal professionals who provided domain expertise
-- Beta testers who validated the system
-
----
-
-## 📞 Support & Contact
-
-### Documentation
-
-- **API Docs**: http://localhost:8000/api/docs (when running)
-- **Blog Post**: [BLOGPOST.md](docs/BLOGPOST.md)
-- **Technical Whitepaper**: [WHITEPAPER.md](docs/WHITEPAPER.md)
-
-### Community
-
-- **GitHub Issues**: [Report bugs or request features](https://github.com/yourusername/contract-guard-ai/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/yourusername/contract-guard-ai/discussions)
-- **Discord**: [Join our community](https://discord.gg/contractguardai)
-- **Twitter**: [@ContractGuardAI](https://twitter.com/ContractGuardAI)
-
-### Commercial Support
-
-For enterprise deployments, custom training, or commercial licenses:
-- Email: enterprise@contractguardai.com
-- Website: https://contractguardai.com
-
----
-
-## 🗺️ Roadmap
-
-### Q1 2025 (Current)
-- [x] Core contract analysis pipeline
-- [x] Legal-BERT integration
-- [x] Multi-factor risk scoring
-- [x] LLM interpretation
-- [x] FastAPI backend
-- [ ] Production deployment
-- [ ] Beta testing program
-
-### Q2 2025
-- [ ] Multi-language support (Spanish, French, German)
-- [ ] Mobile apps (iOS, Android)
-- [ ] Browser extension (Chrome, Firefox)
-- [ ] Industry-specific templates (healthcare, finance, tech)
-- [ ] Team collaboration features
-
-### Q3 2025
-- [ ] Predictive dispute analytics
-- [ ] Regulatory compliance checking (GDPR, CCPA, HIPAA)
-- [ ] Smart contract analysis (blockchain)
-- [ ] Advanced negotiation AI assistant
-
-### Q4 2025
-- [ ] Global legal knowledge graph
-- [ ] Jurisdiction-specific analysis
-- [ ] AI contract drafting
-- [ ] Legal outcome prediction models
-
----
-
-## 📊 Project Statistics
-
-```
-Languages:
-  Python         95.2%
-  JavaScript     3.1%
-  HTML/CSS       1.2%
-  Shell          0.5%
-
-Lines of Code:   ~15,000
-Files:           114
-Directories:     30
-Contributors:    1 (seeking more!)
-Stars:           ⭐ (give us a star!)
-```
-
----
-
-## 🎓 Citation
-
-If you use this project in your research or commercial application, please cite:
-
-```bibtex
-@software{contract_guard_ai,
-  title = {AI Contract Risk Analyzer: Democratizing Legal Intelligence Through AI},
-  author = {Your Name},
-  year = {2025},
-  url = {https://github.com/yourusername/contract-guard-ai},
-  version = {1.0.0}
-}
-```
-
----
-
-## ❓ FAQ
-
-<details>
-<summary><b>Q: Is this a replacement for a lawyer?</b></summary>
-
-**A:** No. This tool provides preliminary analysis and risk identification to help you understand contracts better. Complex legal matters should always involve consultation with a licensed attorney. Think of it as your first line of defense and educational resource.
-</details>
-
-<details>
-<summary><b>Q: How accurate is the AI?</b></summary>
-
-**A:** Our system achieves 94% agreement with expert legal review on standard contract types. We provide confidence scores for all findings so you know when to seek additional review. High-confidence predictions achieve 96%+ accuracy.
-</details>
-
-<details>
-<summary><b>Q: What happens to my uploaded contracts?</b></summary>
-
-**A:** Documents are processed in memory and deleted immediately after analysis. We never store your contracts or train our models on your data. All transfers use TLS 1.3 encryption.
-</details>
-
-<details>
-<summary><b>Q: Can I run this completely offline?</b></summary>
-
-**A:** Yes! Using Ollama for LLM features, you can run the entire system locally without any external API calls. Perfect for sensitive documents or air-gapped environments.
-</details>
-
-<details>
-<summary><b>Q: How long does analysis take?</b></summary>
-
-**A:** Most contracts are analyzed in 20-40 seconds. Complex, lengthy documents may take up to 2 minutes. The API returns immediately with a job ID you can poll for results.
-</details>
-
-<details>
-<summary><b>Q: What contract types are supported?</b></summary>
-
-**A:** We support 12+ contract categories including employment, service agreements, NDAs, leases, partnerships, sales agreements, and more. Even if your contract type isn't explicitly supported, our general analysis still provides valuable insights.
-</details>
-
-<details>
-<summary><b>Q: Can I customize the risk rules?</b></summary>
-
-**A:** Yes! Risk rules are defined in `config/risk_rules.py` and can be customized. You can adjust keyword weights, thresholds, and contract type-specific adjustments. Enterprise users can request custom rule sets.
-</details>
-
-<details>
-<summary><b>Q: Does it support contracts in other languages?</b></summary>
-
-**A:** Currently, we support English-language contracts. Multi-language support (Spanish, French, German, Mandarin) is coming in Q2 2025.
-</details>
-
-<details>
-<summary><b>Q: How much does it cost to run?</b></summary>
-
-**A:** 
-- **Local Ollama**: $0 (completely free, runs on your hardware)
-- **OpenAI (GPT-3.5)**: ~$0.002 per analysis (~$2 per 1000 contracts)
-- **Anthropic (Claude)**: ~$0.004 per analysis (~$4 per 1000 contracts)
-
-Hardware: Consumer laptop sufficient, GPU optional (3x speedup).
-</details>
-
-<details>
-<summary><b>Q: Can I use this for commercial purposes?</b></summary>
-
-**A:** Yes! The MIT license allows commercial use. For enterprise features (API access, volume licensing, white-label, custom training), contact our enterprise team.
-</details>
-
----
-
-## 🌟 Star History
-
-If this project helped you, please consider giving it a star! ⭐
-
-[![Star History Chart](https://api.star-history.com/svg?repos=yourusername/contract-guard-ai&type=Date)](https://star-history.com/#yourusername/contract-guard-ai&Date)
-
 ---
 
 ## 📈 Project Status
 
 **Current Version**: 1.0.0  
-**Status**: ✅ Production Ready  
-**Last Updated**: January 2025
+**Status**: ✅ MVP Ready  
+**Last Updated**: November 2025
 
 | Component | Status | Coverage |
 |-----------|--------|----------|
