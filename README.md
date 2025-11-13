@@ -35,9 +35,10 @@ The AI Contract Risk Analyzer is a production-grade legal document analysis plat
 - [Quick Start](#-quick-start)
 - [API Documentation](#-api-documentation)
 - [Technical Details](#-technical-details)
-- [Configuration](#-configuration)
 - [Development](#-development)
 - [License](#-license)
+- [Acknowledgments](#-acknowledgments)
+- [Project Status](#-project-status)
 
 ---
 
@@ -1105,12 +1106,10 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 <div align="center">
 
-**Made with ❤️ by the Contract Guard AI Team**
-
-[Website](https://contractguardai.com) • [Documentation](https://docs.contractguardai.com) • [Blog](https://blog.contractguardai.com)
+**Made by Itobuz Technologies Private Limited AI Team**
 
 </div>
 
 ---
 
-*© 2025 AI Contract Risk Analyzer. Making legal intelligence accessible to everyone.*
+> *© 2025 AI Contract Risk Analyzer. Making legal intelligence accessible to everyone.*
