@@ -1099,8 +1099,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 | Model Management | ✅ Stable | 88% |
 | Services | ✅ Stable | 85% |
 | Documentation | ✅ Complete | 100% |
-| Tests | 🟡 In Progress | 67% |
-| Frontend | 🟡 Beta | N/A |
+| Frontend | ✅ Stable | 90% |
+| Tests | 🟡 Beta | N/A |
 
 ---
 
