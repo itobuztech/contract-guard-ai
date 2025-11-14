@@ -238,5 +238,5 @@ The AI Contract Risk Analyzer transcends mere tool status—it represents a move
 
 *Ultimate Revision: November 2025* | *Version: 1.0*
 
-© 2025 AI Contract Risk Analyzer. Democratizing legal intelligence for global accessibility.
+> © 2025 AI Contract Risk Analyzer. Democratizing legal intelligence for global accessibility.
 ---
