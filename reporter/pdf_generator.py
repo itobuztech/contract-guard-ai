@@ -75,6 +75,16 @@ class PDFReportGenerator:
             alignment=TA_JUSTIFY,
             fontName='Helvetica'
         ))
+
+        # Small text style (add this)
+        self.styles.add(ParagraphStyle(
+            name='SmallText',
+            parent=self.styles['Normal'],
+            fontSize=8,
+            leading=10,
+            textColor=colors.HexColor('#666666'),
+            fontName='Helvetica'
+        ))
         
         # Bullet point
         self.styles.add(ParagraphStyle(
@@ -166,14 +176,14 @@ class PDFReportGenerator:
         # Header
         canvas.setFont('Helvetica-Bold', 12)
         canvas.drawString(0.75 * inch, letter[1] - 0.5 * inch, 
-                         "AI Contract Risk Analysis Report")
+                        "AI Contract Risk Analysis Report")
         
         # Footer
         canvas.setFont('Helvetica', 8)
         canvas.setFillColor(colors.HexColor('#666666'))
         
-        # Page number
-        page_num = f"Page {doc.page} of {doc.page_count if hasattr(doc, 'page_count') else '?'}"
+        # Page number (without total pages)
+        page_num = f"Page {doc.page}"
         canvas.drawString(7 * inch, 0.5 * inch, page_num)
         
         # Legal disclaimer
@@ -181,6 +191,7 @@ class PDFReportGenerator:
         canvas.drawCentredString(letter[0] / 2, 0.5 * inch, disclaimer)
         
         canvas.restoreState()
+
     
     def generate_report(self, analysis_result: Dict[str, Any], 
                        output_path: Optional[str] = None) -> BytesIO:
@@ -254,7 +265,7 @@ class PDFReportGenerator:
         elements.append(Paragraph("Executive Summary", 
                                  self.styles['SectionHeading']))
         elements.append(Paragraph(result['executive_summary'], 
-                                 self.styles['BodyText']))
+                         self.styles['CustomBodyText']))
         elements.append(Spacer(1, 0.2*inch))
         
         # Unfavorable Terms
@@ -287,7 +298,8 @@ class PDFReportGenerator:
                                  self.styles['SectionHeading']))
         elements.append(Spacer(1, 0.1*inch))
         
-        negotiation_points = result.get('negotiation_points', [])
+        negotiation_playbook = result.get('negotiation_playbook', {})
+        negotiation_points = negotiation_playbook.get('critical_points', [])
         
         if negotiation_points:
             for point in negotiation_points[:7]:  # Limit to 7 points
@@ -355,79 +367,72 @@ class PDFReportGenerator:
         
         return elements
     
-    def _build_clause_analysis(self, result: Dict) -> List:
-        """Build clause-by-clause analysis section"""
-        elements = []
+    def _build_clause_analysis(self, analysis_result):
+        """Build clause analysis section with null safety"""
+        story = []
         
-        elements.append(Paragraph("Clause-by-Clause Analysis", 
-                                 self.styles['SectionHeading']))
-        elements.append(Spacer(1, 0.15*inch))
+        clauses = analysis_result.get('clauses', [])
+        if not clauses:
+            return story
         
-        # Create table data
-        table_data = [
-            [
-                Paragraph('<b>Clause</b>', self.styles['TableHeader']),
-                Paragraph('<b>Risk Level</b>', self.styles['TableHeader']),
-                Paragraph('<b>Analysis</b>', self.styles['TableHeader']),
-                Paragraph('<b>Recommendation</b>', self.styles['TableHeader'])
+        story.append(Paragraph("Clause-by-Clause Analysis", self.styles['Heading2']))
+        
+        for clause in clauses:
+            # Add null safety for clause reference
+            clause_ref = clause.get('reference')
+            if clause_ref is None:
+                clause_ref = "Unknown Reference"
+            
+            # Add null safety for category
+            clause_category = clause.get('category', 'Unknown Category')
+            
+            # Add null safety for text
+            clause_text = clause.get('text', 'No text available')
+            if clause_text is None:
+                clause_text = 'No text available'
+            
+            # Add null safety for confidence
+            confidence = clause.get('confidence', 0)
+            if confidence is None:
+                confidence = 0
+            
+            # Create table for this clause - use fixed widths instead of page_width
+            clause_data = [
+                [
+                    Paragraph(f"<b>{clause_ref} • {clause_category}</b>", self.styles['BodyText']),
+                    Paragraph(f"<b>{int(confidence * 100)}% confidence</b>", self.styles['BodyText'])
+                ],
+                [
+                    Paragraph(clause_text, self.styles['BodyText']),
+                    ''
+                ]
             ]
-        ]
-        
-        # Get unfavorable terms and interpretations
-        unfavorable_terms = result.get('unfavorable_terms', [])
-        interpretations = result.get('clause_interpretations', [])
-        
-        # Combine and process
-        processed_clauses = []
-        
-        for term in unfavorable_terms[:10]:  # Limit to 10 clauses
-            clause_ref = term.get('clause_reference', term['term'])
             
-            # Find matching interpretation if available
-            analysis_text = term['explanation']
-            recommendation_text = term.get('suggested_fix', 'Negotiate or seek legal advice.')
+            # Add risk indicators if present
+            risk_indicators = clause.get('risk_indicators', [])
+            if risk_indicators and any(risk_indicators):
+                clause_data.append([
+                    Paragraph(f"<b>Risk Indicators:</b> {', '.join([ri for ri in risk_indicators if ri])}", self.styles['SmallText']),
+                    ''
+                ])
             
-            # Determine risk level
-            severity = term.get('severity', 'high')
-            if severity == 'critical':
-                risk_level = 'Critical'
-                risk_color = colors.HexColor('#dc2626')
-            elif severity == 'high':
-                risk_level = 'High'
-                risk_color = colors.HexColor('#f97316')
-            else:
-                risk_level = 'Medium'
-                risk_color = colors.HexColor('#ca8a04')
+            # Use fixed column widths instead of page_width
+            clause_table = Table(clause_data, colWidths=[400, 150])  # Fixed widths in points
+            clause_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                ('ALIGN', (1, 0), (1, 0), 'RIGHT'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 10),
+                ('ROWBACKGROUNDS', (0, 0), (-1, -1), [colors.white, colors.whitesmoke]),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                ('SPAN', (0, 1), (-1, 1)),  # Span the text across both columns
+            ]))
             
-            clause_cell = Paragraph(clause_ref, self.styles['BodyText'])
-            risk_cell = Paragraph(
-                f'<font color="{risk_color.hexval()}"><b>{risk_level}</b></font>',
-                self.styles['TableHeader']
-            )
-            analysis_cell = Paragraph(analysis_text, self.styles['BodyText'])
-            recommendation_cell = Paragraph(recommendation_text, self.styles['BodyText'])
-            
-            table_data.append([clause_cell, risk_cell, analysis_cell, recommendation_cell])
+            story.append(clause_table)
+            story.append(Spacer(1, 0.2 * inch))
         
-        # Create table
-        table = Table(table_data, colWidths=[1.5*inch, 0.8*inch, 2.2*inch, 2*inch])
-        table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#f5f5f5')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.HexColor('#1a1a1a')),
-            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-            ('ALIGN', (1, 0), (1, -1), 'CENTER'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 9),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-            ('TOPPADDING', (0, 1), (-1, -1), 10),
-            ('BOTTOMPADDING', (0, 1), (-1, -1), 10),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#e5e5e5')),
-            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ]))
-        
-        elements.append(table)
-        
-        return elements
+        return story
 
 
 def generate_pdf_report(analysis_result: Dict[str, Any], 

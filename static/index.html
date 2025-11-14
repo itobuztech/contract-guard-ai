@@ -561,7 +561,7 @@
             border: 1px solid #fecaca;
         }
 
-        /* Results screen styles - UPDATED BUTTON POSITIONING */
+        /* Results screen styles */
         .results-header {
             display: flex;
             justify-content: space-between;
@@ -633,7 +633,7 @@
         .card-title {
             font-size: 1.25rem;
             font-weight: 600;
-            margin-bottom: 1.5rem;
+            margin: 0; 
         }
 
         .risk-score-container {
@@ -703,8 +703,12 @@
         }
 
         .card-icon {
-            font-size: 1.5rem;
+            font-size: 2.0rem;
+            display: flex;          
+            align-items: center;    
+            gap: 8px;              
             margin-bottom: 0.5rem;
+            display: flex;
         }
 
         .icon-warning { color: #f97316; }
@@ -1124,24 +1128,21 @@
 
                 <div class="three-column-grid">
                     <div class="card">
-                        <div class="card-icon icon-warning">⚠️</div>
-                        <h3 class="card-title">Unfavorable Terms</h3>
+                        <div class="card-icon icon-warning">⚠️<h3 class="card-title">Unfavorable Terms</h3></div>
                         <ul class="item-list" id="unfavorableTermsList">
                             <li>No unfavorable terms detected yet</li>
                         </ul>
                     </div>
 
                     <div class="card">
-                        <div class="card-icon icon-shield">🛡️</div>
-                        <h3 class="card-title">Missing Protections</h3>
+                        <div class="card-icon icon-shield">🛡️<h3 class="card-title">Missing Protections</h3></div>
                         <ul class="item-list" id="missingProtectionsList">
                             <li>No missing protections detected yet</li>
                         </ul>
                     </div>
 
                     <div class="card">
-                        <div class="card-icon icon-book">📖</div>
-                        <h3 class="card-title">Negotiation Points</h3>
+                        <div class="card-icon icon-book">📖<h3 class="card-title">Negotiation Points</h3></div>
                         <ul class="item-list" id="negotiationPointsList">
                             <li>No negotiation points generated yet</li>
                         </ul>
@@ -1583,13 +1584,19 @@
             const negotiationList = document.getElementById('negotiationPointsList');
             negotiationList.innerHTML = '';
             if (result.negotiation_points && result.negotiation_points.length > 0) {
-                result.negotiation_points.slice(0, 8).forEach(point => {
+                // Sort by priority (lower number = higher priority)
+                const sortedPoints = result.negotiation_points
+                    .slice()
+                    .sort((a, b) => a.priority - b.priority)
+                    .slice(0, 8);
+                
+                sortedPoints.forEach(point => {
                     const li = document.createElement('li');
-                    li.innerHTML = `<span class="item-icon">›</span><span class="item-text"><strong>${point.point}:</strong> ${point.explanation}</span>`;
+                    li.innerHTML = `<span class="item-icon">›</span><span class="item-text"><strong>${point.issue}:</strong> ${point.rationale}</span>`;
                     negotiationList.appendChild(li);
                 });
             } else {
-                negotiationList.innerHTML = '<li>No negotiation points generated</li>';
+                negotiationList.innerHTML = '<li>No negotiation points generated yet</li>';
             }
 
             // Update category breakdown
@@ -1630,13 +1637,23 @@
                     const clauseItem = document.createElement('div');
                     clauseItem.className = `clause-item ${getRiskClass(clause.confidence * 100)}`;
                     
+                    // Clean up the text - normalize all whitespace
+                    const cleanText = clause.text ? 
+                        clause.text
+                            .replace(/\n/g, ' ')          // Replace newlines with spaces
+                            .replace(/\s+/g, ' ')         // Replace multiple spaces with single space
+                            .trim() :                     // Remove leading/trailing spaces
+                        'No text available';
+                    
                     clauseItem.innerHTML = `
-                        <div class="clause-header">
-                            <div>
+                        <div class="clause-header" style="display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem;">
+                            <div style="flex: 1; min-width: 0;">
                                 <div class="clause-label">${clause.reference} • ${clause.category}</div>
-                                <div class="clause-text">${clause.text.substring(0, 200)}${clause.text.length > 200 ? '...' : ''}</div>
+                                <div class="clause-text" style="line-height: 1.6; margin-top: 0.5rem;">
+                                    ${cleanText}
+                                </div>
                             </div>
-                            <div class="severity-badge badge-${getRiskClass(clause.confidence * 100)}">
+                            <div class="severity-badge badge-${getRiskClass(clause.confidence * 100)}" style="flex-shrink: 0; white-space: nowrap;">
                                 ${Math.round(clause.confidence * 100)}% confidence
                             </div>
                         </div>

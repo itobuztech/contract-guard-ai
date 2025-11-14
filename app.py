@@ -1,7 +1,6 @@
 """
-FastAPI Application for AI Contract Risk Analyzer
-Complete pre-loading approach: All models loaded at startup
-Direct synchronous flow: Upload → Analyze → Return Results + PDF
+FastAPI Application for AI Contract Risk Analyzer - UPDATED
+Complete integration with new services pipeline and frontend requirements
 """
 import signal
 import os
@@ -25,41 +24,35 @@ import sys
 # Add parent directory to path
 sys.path.append(str(Path(__file__).parent))
 
-# Import all services
+# Import all services - UPDATED WITH NEW SERVICES
 from config.settings import settings
 from config.risk_rules import ContractType
 from model_manager.model_loader import ModelLoader
+from model_manager.llm_manager import LLMManager, LLMProvider
 from utils.document_reader import DocumentReader
 from utils.validators import ContractValidator
 from utils.text_processor import TextProcessor
 from utils.logger import ContractAnalyzerLogger, log_info, log_error
 
-from services.contract_classifier import ContractClassifier
-from services.clause_extractor import ClauseExtractor
-from services.risk_analyzer import MultiFactorRiskAnalyzer
-from services.term_analyzer import TermAnalyzer
-from services.protection_checker import ProtectionChecker
-from services.llm_interpreter import LLMClauseInterpreter
-from services.negotiation_engine import NegotiationEngine
-from services.market_comparator import MarketComparator
+# UPDATED SERVICE IMPORTS
+from services.contract_classifier import ContractClassifier, ContractCategory
+from services.clause_extractor import ComprehensiveClauseExtractor, RiskClauseExtractor, ExtractedClause
+from services.risk_analyzer import RiskAnalyzer, RiskScore
+from services.term_analyzer import TermAnalyzer, UnfavorableTerm
+from services.protection_checker import ProtectionChecker, MissingProtection
+from services.llm_interpreter import LLMClauseInterpreter, ClauseInterpretation, RiskInterpretation
+from services.negotiation_engine import NegotiationEngine, NegotiationPlaybook, NegotiationPoint
 from services.summary_generator import SummaryGenerator
 
 # Import PDF generator
 from reporter.pdf_generator import generate_pdf_report
 
 # ============================================================================
-# CUSTOM SERIALIZATION
+# CUSTOM SERIALIZATION (UNCHANGED)
 # ============================================================================
 
 class NumpyJSONEncoder(json.JSONEncoder):
-    """
-    Custom JSON encoder that handles NumPy types and custom objects
-    """
     def default(self, obj: Any) -> Any:
-        """
-        Convert non-serializable objects to JSON-serializable types
-        """
-        # NumPy types
         if isinstance(obj, (np.float32, np.float64)):
             return float(obj)
         elif isinstance(obj, (np.int32, np.int64, np.int8, np.uint8)):
@@ -68,33 +61,18 @@ class NumpyJSONEncoder(json.JSONEncoder):
             return obj.tolist()
         elif isinstance(obj, np.bool_):
             return bool(obj)
-        elif hasattr(obj, 'item'):  
-            # numpy scalar types
+        elif hasattr(obj, 'item'):
             return obj.item()
-        
-        # Custom objects with to_dict method
         elif hasattr(obj, 'to_dict'):
             return obj.to_dict()
-        
-        # Pydantic models
         elif hasattr(obj, 'dict'):
             return obj.dict()
-        
-        # Handle other types
         elif isinstance(obj, (set, tuple)):
             return list(obj)
-        
         return super().default(obj)
 
-
 class NumpyJSONResponse(JSONResponse):
-    """
-    Custom JSON response that handles NumPy types
-    """
     def render(self, content: Any) -> bytes:
-        """
-        Render content with NumPy type handling
-        """
         return json.dumps(
             content,
             ensure_ascii=False,
@@ -104,23 +82,13 @@ class NumpyJSONResponse(JSONResponse):
             cls=NumpyJSONEncoder,
         ).encode("utf-8")
 
-
 def convert_numpy_types(obj: Any) -> Any:
-    """
-    Recursively convert numpy types to Python native types
-    """
     if obj is None:
         return None
-    
-    # Handle dictionaries
     if isinstance(obj, dict):
         return {key: convert_numpy_types(value) for key, value in obj.items()}
-    
-    # Handle lists, tuples, sets
     elif isinstance(obj, (list, tuple, set)):
         return [convert_numpy_types(item) for item in obj]
-    
-    # Handle NumPy types
     elif isinstance(obj, (np.float32, np.float64)):
         return float(obj)
     elif isinstance(obj, (np.int32, np.int64, np.int8, np.uint8)):
@@ -129,54 +97,32 @@ def convert_numpy_types(obj: Any) -> Any:
         return obj.tolist()
     elif isinstance(obj, np.bool_):
         return bool(obj)
-    elif hasattr(obj, 'item'):  
+    elif hasattr(obj, 'item'):
         return obj.item()
-    
-    # Handle custom objects with to_dict method
     elif hasattr(obj, 'to_dict'):
         return convert_numpy_types(obj.to_dict())
-    
-    # Handle Pydantic models
     elif hasattr(obj, 'dict'):
         return convert_numpy_types(obj.dict())
-    
-    # Return as-is for other types
     else:
         return obj
 
-
 def safe_serialize_response(data: Any) -> Any:
-    """
-    Safely serialize response data ensuring all types are JSON-compatible
-    """
     return convert_numpy_types(data)
 
-
 # ============================================================================
-# PYDANTIC SCHEMAS
+# PYDANTIC SCHEMAS - UPDATED FOR FRONTEND COMPATIBILITY
 # ============================================================================
 
 class SerializableBaseModel(BaseModel):
-    """
-    Base model with enhanced serialization for NumPy types
-    """
     def dict(self, *args, **kwargs) -> Dict[str, Any]:
-        """
-        Override dict method to handle NumPy types
-        """
         data = super().dict(*args, **kwargs)
         return convert_numpy_types(data)
     
     def json(self, *args, **kwargs) -> str:
-        """
-        Override json method to handle NumPy types
-        """
         data = self.dict(*args, **kwargs)
         return json.dumps(data, cls=NumpyJSONEncoder, *args, **kwargs)
 
-
 class HealthResponse(SerializableBaseModel):
-    """Health check response"""
     status: str
     version: str
     timestamp: str
@@ -184,17 +130,13 @@ class HealthResponse(SerializableBaseModel):
     services_loaded: int
     memory_usage_mb: float
 
-
 class AnalysisOptions(SerializableBaseModel):
-    """Analysis options"""
     max_clauses: int = Field(default=15, ge=5, le=30)
     interpret_clauses: bool = Field(default=True)
     generate_negotiation_points: bool = Field(default=True)
-    compare_to_market: bool = Field(default=True)
-
+    compare_to_market: bool = Field(default=False)  # Disabled for now
 
 class AnalysisResult(SerializableBaseModel):
-    """Complete analysis result"""
     analysis_id: str
     timestamp: str
     classification: Dict[str, Any]
@@ -209,31 +151,27 @@ class AnalysisResult(SerializableBaseModel):
     metadata: Dict[str, Any]
     pdf_available: bool = True
 
-
 class ErrorResponse(SerializableBaseModel):
-    """Error response"""
     error: str
     detail: str
     timestamp: str
 
-
 class FileValidationResponse(SerializableBaseModel):
-    """File validation response"""
     valid: bool
     message: str
     confidence: Optional[float] = None
     report: Optional[Dict[str, Any]] = None
 
-
 # ============================================================================
-# SERVICE INITIALIZATION WITH FULL PRE-LOADING
+# SERVICE INITIALIZATION WITH FULL PIPELINE INTEGRATION
 # ============================================================================
 
 class PreloadedAnalysisService:
-    """Analysis service with complete pre-loading of all models"""
+    """Analysis service with complete pipeline integration"""
     
     def __init__(self):
         self.model_loader = ModelLoader()
+        self.llm_manager = LLMManager()
         self.services = {}
         self.service_status = {}
         self.memory_usage_mb = 0
@@ -244,94 +182,58 @@ class PreloadedAnalysisService:
         log_info("PRE-LOADING ALL AI MODELS AND SERVICES")
         
         try:
-            # Track memory usage
             initial_memory = self._get_memory_usage()
             
-            # 1. Pre-load core classifier
+            # 1. Pre-load Contract Classifier
             log_info("🔄 Pre-loading Contract Classifier...")
             self.services["classifier"] = ContractClassifier(self.model_loader)
             self.service_status["classifier"] = "loaded"
             log_info("✅ Contract Classifier loaded")
             
-            # 2. Pre-load Term Analyzer
-            log_info("🔄 Pre-loading Term Analyzer...")
-            self.services["term_analyzer"] = TermAnalyzer()
-            self.service_status["term_analyzer"] = "loaded"
-            log_info("✅ Term Analyzer loaded")
+            # 2. Pre-load Comprehensive Clause Extractor
+            log_info("🔄 Pre-loading Comprehensive Clause Extractor...")
+            self.services["clause_extractor"] = ComprehensiveClauseExtractor(self.model_loader)
+            self.service_status["clause_extractor"] = "loaded"
+            log_info("✅ Comprehensive Clause Extractor loaded")
             
-            # 3. Pre-load Protection Checker
-            log_info("🔄 Pre-loading Protection Checker...")
-            self.services["protection_checker"] = ProtectionChecker()
-            self.service_status["protection_checker"] = "loaded"
-            log_info("✅ Protection Checker loaded")
+            # 3. Pre-load Risk Analyzer (Main Orchestrator)
+            log_info("🔄 Pre-loading Risk Analyzer...")
+            self.services["risk_analyzer"] = RiskAnalyzer(self.model_loader)
+            self.service_status["risk_analyzer"] = "loaded"
+            log_info("✅ Risk Analyzer loaded")
             
-            # 4. Pre-load Market Comparator
-            log_info("🔄 Pre-loading Market Comparator...")
-            self.services["market_comparator"] = MarketComparator(self.model_loader)
-            self.service_status["market_comparator"] = "loaded"
-            log_info("✅ Market Comparator loaded")
-            
-            # 5. Pre-load Clause Extractors for all major contract types
-            log_info("🔄 Pre-loading Clause Extractors...")
-            self.services["extractors"] = {}
-            major_categories = ["employment", "consulting", "nda", "software", "service", "partnership"]
-            
-            for category in major_categories:
-                try:
-                    self.services["extractors"][category] = ClauseExtractor(
-                        self.model_loader, contract_category=category
-                    )
-                    log_info(f"  ✅ Clause Extractor for {category} loaded")
-                except Exception as e:
-                    log_error(f"Failed to load extractor for {category}: {e}")
-                    self.services["extractors"][category] = None
-            
-            self.service_status["extractors"] = f"loaded for {len(major_categories)} categories"
-            log_info("✅ All Clause Extractors loaded")
-            
-            # 6. Pre-load Risk Analyzers for all contract types
-            log_info("🔄 Pre-loading Risk Analyzers...")
-            self.services["risk_analyzers"] = {}
-            contract_types = [
-                ContractType.EMPLOYMENT, ContractType.CONSULTING, ContractType.NDA,
-                ContractType.SOFTWARE, ContractType.SERVICE, ContractType.PARTNERSHIP,
-                ContractType.LEASE, ContractType.PURCHASE, ContractType.GENERAL
-            ]
-            
-            for contract_type in contract_types:
-                try:
-                    self.services["risk_analyzers"][contract_type.value] = MultiFactorRiskAnalyzer(
-                        contract_type=contract_type
-                    )
-                    log_info(f"  ✅ Risk Analyzer for {contract_type.value} loaded")
-                except Exception as e:
-                    log_error(f"Failed to load risk analyzer for {contract_type.value}: {e}")
-                    self.services["risk_analyzers"][contract_type.value] = None
-            
-            self.service_status["risk_analyzers"] = f"loaded for {len(contract_types)} types"
-            log_info("✅ All Risk Analyzers loaded")
-            
-            # 7. Pre-load LLM Interpreter (if available)
+            # 4. Pre-load LLM Interpreter
             log_info("🔄 Pre-loading LLM Interpreter...")
             try:
-                self.services["interpreter"] = LLMClauseInterpreter()
-                self.service_status["interpreter"] = "loaded"
+                self.services["llm_interpreter"] = LLMClauseInterpreter(self.llm_manager)
+                self.service_status["llm_interpreter"] = "loaded"
                 log_info("✅ LLM Interpreter loaded")
             except Exception as e:
-                self.services["interpreter"] = None
-                self.service_status["interpreter"] = f"failed: {str(e)}"
-                log_info("⚠️  LLM Interpreter not available (will skip interpretation)")
+                self.services["llm_interpreter"] = None
+                self.service_status["llm_interpreter"] = f"failed: {str(e)}"
+                log_info("⚠️  LLM Interpreter not available")
             
-            # 8. Pre-load Negotiation Engine (if available)
+            # 5. Pre-load Negotiation Engine
             log_info("🔄 Pre-loading Negotiation Engine...")
             try:
-                self.services["negotiation_engine"] = NegotiationEngine()
+                self.services["negotiation_engine"] = NegotiationEngine(self.llm_manager)
                 self.service_status["negotiation_engine"] = "loaded"
                 log_info("✅ Negotiation Engine loaded")
             except Exception as e:
                 self.services["negotiation_engine"] = None
                 self.service_status["negotiation_engine"] = f"failed: {str(e)}"
-                log_info("⚠️  Negotiation Engine not available (will skip negotiation points)")
+                log_info("⚠️  Negotiation Engine not available")
+            
+            # 6. Pre-load Summary Generator
+            log_info("🔄 Pre-loading Summary Generator...")
+            try:
+                self.services["summary_generator"] = SummaryGenerator(self.llm_manager)
+                self.service_status["summary_generator"] = "loaded"
+                log_info("✅ Summary Generator loaded")
+            except Exception as e:
+                self.services["summary_generator"] = SummaryGenerator()
+                self.service_status["summary_generator"] = "fallback_loaded"
+                log_info("⚠️  Summary Generator using fallback mode")
             
             # Calculate memory usage
             final_memory = self._get_memory_usage()
@@ -366,130 +268,136 @@ class PreloadedAnalysisService:
         }
     
     def analyze_contract(self, contract_text: str, options: AnalysisOptions) -> Dict[str, Any]:
-        """Synchronous contract analysis using pre-loaded services"""
+        """Complete contract analysis using full pipeline"""
         try:
-            log_info("Starting contract analysis with pre-loaded services...")
+            log_info("Starting comprehensive contract analysis pipeline...")
             
             # Step 1: Classify contract
             classification = self.services["classifier"].classify_contract(contract_text)
             classification_dict = safe_serialize_response(classification.to_dict())
-            actual_category = classification.category
+            log_info(f"Contract classified as: {classification.category}")
             
-            log_info(f"Contract classified as: {actual_category}")
-            
-            # Step 2: Get appropriate extractor
-            extractor = self.services["extractors"].get(actual_category)
-            if not extractor:
-                # Fallback to first available extractor or create new one
-                available_categories = [cat for cat, ext in self.services["extractors"].items() if ext is not None]
-                if available_categories:
-                    fallback_category = available_categories[0]
-                    extractor = self.services["extractors"][fallback_category]
-                    log_info(f"Using fallback extractor for: {fallback_category}")
-                else:
-                    # Create new extractor for this category
-                    extractor = ClauseExtractor(self.model_loader, contract_category=actual_category)
-                    self.services["extractors"][actual_category] = extractor
-            
-            # Extract clauses
-            clauses = extractor.extract_clauses(contract_text, options.max_clauses)
+            # Step 2: Extract clauses
+            clauses = self.services["clause_extractor"].extract_clauses(
+                contract_text, options.max_clauses
+            )
             clauses_dict = [safe_serialize_response(clause.to_dict()) for clause in clauses]
             log_info(f"Extracted {len(clauses)} clauses")
             
-            # Step 3: Map to ContractType and get appropriate risk analyzer
-            contract_type_mapping = {
-                'employment': ContractType.EMPLOYMENT,
-                'consulting': ContractType.CONSULTING,
-                'nda': ContractType.NDA,
-                'technology': ContractType.SOFTWARE,
-                'software': ContractType.SOFTWARE,
-                'service_agreement': ContractType.SERVICE,
-                'business': ContractType.PARTNERSHIP,
-                'real_estate': ContractType.LEASE,
-                'sales': ContractType.PURCHASE,
-            }
-            contract_type = contract_type_mapping.get(actual_category, ContractType.GENERAL)
+            # Step 3: Map to ContractType
+            contract_type = self._get_contract_type_enum(classification.category)
             
-            risk_analyzer = self.services["risk_analyzers"].get(contract_type.value)
-            if not risk_analyzer:
-                # Fallback to general analyzer
-                risk_analyzer = self.services["risk_analyzers"]["general"]
-            
-            # Analyze risk
-            risk_score = risk_analyzer.analyze_risk(contract_text, clauses)
+            # Step 4: Complete Risk Analysis (Main Orchestrator)
+            risk_score = self.services["risk_analyzer"].analyze_contract_risk(contract_text)
             risk_dict = safe_serialize_response(risk_score.to_dict())
-            log_info(f"Risk analysis completed: {risk_dict['overall_score']}/100")
+            log_info(f"Risk analysis completed: {risk_score.overall_score}/100")
             
-            # Step 4: Find unfavorable terms
-            unfavorable_terms = self.services["term_analyzer"].analyze_unfavorable_terms(contract_text, clauses)
-            unfavorable_dict = [safe_serialize_response(term.to_dict()) for term in unfavorable_terms]
-            log_info(f"Found {len(unfavorable_terms)} unfavorable terms")
+            # Extract components from risk analysis for further processing
+            unfavorable_terms = risk_score.unfavorable_terms
+            missing_protections = risk_score.missing_protections
             
-            # Step 5: Check missing protections
-            missing_protections = self.services["protection_checker"].check_missing_protections(contract_text, clauses)
-            missing_dict = [safe_serialize_response(prot.to_dict()) for prot in missing_protections]
-            log_info(f"Found {len(missing_protections)} missing protections")
-            
-            # Optional steps
+            # Step 5: Generate LLM Interpretations (if enabled and available)
             interpretations_dict = None
-            negotiation_dict = None
-            market_dict = None
+            risk_interpretation = None
             
-            if options.interpret_clauses and self.services["interpreter"]:
+            if options.interpret_clauses and self.services["llm_interpreter"]:
                 try:
-                    interpretations = self.services["interpreter"].interpret_clauses(
-                        clauses, min(10, options.max_clauses)
+                    risk_interpretation = self.services["llm_interpreter"].interpret_with_risk_context(
+                        clauses=clauses,
+                        unfavorable_terms=unfavorable_terms,
+                        missing_protections=missing_protections,
+                        contract_type=contract_type,
+                        overall_risk_score=risk_score.overall_score,
+                        max_clauses=min(10, options.max_clauses)
                     )
-                    interpretations_dict = [safe_serialize_response(interp.to_dict()) for interp in interpretations]
-                    log_info(f"Interpreted {len(interpretations)} clauses")
+                    interpretations_dict = [
+                        safe_serialize_response(interp.to_dict()) 
+                        for interp in risk_interpretation.clause_interpretations
+                    ]
+                    log_info(f"Generated {len(interpretations_dict)} clause interpretations")
                 except Exception as e:
-                    log_error(f"Clause interpretation failed: {e}")
+                    log_error(f"LLM interpretation failed: {e}")
                     interpretations_dict = []
             
+            # Step 6: Generate Negotiation Points (if enabled and available)
+            negotiation_dict     = []
+            negotiation_playbook = None
+
             if options.generate_negotiation_points and self.services["negotiation_engine"]:
                 try:
-                    negotiation_points = self.services["negotiation_engine"].generate_negotiation_points(
-                        risk_score, unfavorable_terms, missing_protections, clauses, 7
+                    negotiation_playbook = self.services["negotiation_engine"].generate_comprehensive_playbook(
+                        risk_analysis=risk_score,
+                        risk_interpretation=risk_interpretation or RiskInterpretation(
+                            overall_risk_explanation="",
+                            key_concerns=[],
+                            negotiation_strategy="",
+                            market_comparison="",
+                            clause_interpretations=[]
+                        ),
+                        unfavorable_terms=unfavorable_terms,
+                        missing_protections=missing_protections,
+                        clauses=clauses,
+                        contract_type=contract_type,
+                        max_points=8  # Match frontend limit
                     )
-                    negotiation_dict = [safe_serialize_response(point.to_dict()) for point in negotiation_points]
-                    log_info(f"Generated {len(negotiation_points)} negotiation points")
+                    
+                    negotiation_dict = [
+                        safe_serialize_response(point.to_dict()) 
+                        for point in negotiation_playbook.critical_points
+                    ]
+                    log_info(f"Generated {len(negotiation_dict)} negotiation points")
+
                 except Exception as e:
-                    log_error(f"Negotiation points generation failed: {e}")
+                    log_error(f"Negotiation engine failed: {e}")
+                    print(f"🔍 DEBUG: Negotiation engine exception: {e}")
+                    import traceback
+                    print(f"🔍 DEBUG: Full traceback: {traceback.format_exc()}")
                     negotiation_dict = []
             
-            if options.compare_to_market:
-                try:
-                    market_comparisons = self.services["market_comparator"].compare_to_market(clauses)
-                    market_dict = [safe_serialize_response(comp.to_dict()) for comp in market_comparisons]
-                    log_info(f"Compared {len(market_comparisons)} clauses to market")
-                except Exception as e:
-                    log_error(f"Market comparison failed: {e}")
-                    market_dict = []
-            
-            # Generate executive summary
-            executive_summary = self._generate_executive_summary(
-                classification_dict, risk_dict, unfavorable_dict, missing_dict, clauses,
+            # Step 7: Generate Executive Summary
+            executive_summary = self.services["summary_generator"].generate_comprehensive_summary(
+                contract_text=contract_text,
+                classification=classification,
+                risk_analysis=risk_score,
+                risk_interpretation=risk_interpretation or RiskInterpretation(
+                    overall_risk_explanation="",
+                    key_concerns=[],
+                    negotiation_strategy="",
+                    market_comparison="",
+                    clause_interpretations=[]
+                ),
+                negotiation_playbook=negotiation_playbook or NegotiationPlaybook(
+                    overall_strategy="",
+                    critical_points=[],
+                    walk_away_items=[],
+                    concession_items=[],
+                    timing_guidance="",
+                    risk_mitigation_plan=""
+                ),
+                unfavorable_terms=unfavorable_terms,
+                missing_protections=missing_protections,
+                clauses=clauses
             )
             
-            # Build result
+            # Build final result matching frontend expectations
             result = {
                 "analysis_id": str(uuid.uuid4()),
                 "timestamp": datetime.now().isoformat(),
                 "classification": classification_dict,
                 "clauses": clauses_dict,
-                "risk_analysis": risk_dict,
-                "unfavorable_terms": unfavorable_dict,
-                "missing_protections": missing_dict,
+                "risk_analysis": risk_dict,  # Contains overall_score, risk_level, category_scores, risk_breakdown
+                "unfavorable_terms": [safe_serialize_response(term) for term in unfavorable_terms],
+                "missing_protections": [safe_serialize_response(prot) for prot in missing_protections],
                 "clause_interpretations": interpretations_dict,
                 "negotiation_points": negotiation_dict,
-                "market_comparisons": market_dict,
+                "market_comparisons": [],  # Disabled for now
                 "executive_summary": executive_summary,
                 "metadata": {
                     "text_length": len(contract_text),
                     "word_count": len(contract_text.split()),
                     "num_clauses": len(clauses),
                     "contract_type": contract_type.value,
-                    "actual_category": actual_category,
+                    "actual_category": classification.category,
                     "options": options.dict()
                 },
                 "pdf_available": True
@@ -502,22 +410,23 @@ class PreloadedAnalysisService:
             log_error(f"Contract analysis failed: {e}")
             raise
     
-    def _generate_executive_summary(self, classification: Dict, risk_score: Dict, 
-                               unfavorable_terms: List, missing_protections: List,
-                               clauses: List[Dict]) -> str:
-        """Generate executive summary using LLM"""
-        summary_generator = SummaryGenerator()
-        
-        return summary_generator.generate_executive_summary(
-            classification=classification,
-            risk_analysis=risk_score,
-            unfavorable_terms=unfavorable_terms,
-            missing_protections=missing_protections,
-            clauses=clauses
-        )
+    def _get_contract_type_enum(self, category_str: str) -> ContractType:
+        """Convert category string to ContractType enum"""
+        mapping = {
+            'employment': ContractType.EMPLOYMENT,
+            'consulting': ContractType.CONSULTING,
+            'nda': ContractType.NDA,
+            'software': ContractType.SOFTWARE,
+            'service': ContractType.SERVICE,
+            'partnership': ContractType.PARTNERSHIP,
+            'lease': ContractType.LEASE,
+            'purchase': ContractType.PURCHASE,
+            'general': ContractType.GENERAL,
+        }
+        return mapping.get(category_str, ContractType.GENERAL)
 
 # ============================================================================
-# FASTAPI APPLICATION
+# FASTAPI APPLICATION (UNCHANGED STRUCTURE, UPDATED IMPLEMENTATION)
 # ============================================================================
 
 # Global instances
@@ -530,18 +439,14 @@ logger = ContractAnalyzerLogger.get_logger()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Lifespan events for startup and shutdown"""
     global analysis_service
     
-    # Startup
     log_info(f"🚀 {settings.APP_NAME} v{settings.APP_VERSION} STARTING UP...")
     log_info("=" * 80)
     
     try:
-        # Initialize analysis service
         analysis_service = PreloadedAnalysisService()
         log_info("✅ All services initialized successfully")
-        
     except Exception as e:
         log_error(f"Startup failed: {e}")
         raise
@@ -553,10 +458,8 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
-        # Shutdown - This runs on normal shutdown and KeyboardInterrupt
         log_info("🛑 Shutting down server...")
         log_info("✅ Server shutdown complete")
-
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -578,18 +481,17 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 # Enhanced CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # For development - restrict in production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # ============================================================================
-# HELPER FUNCTIONS
+# HELPER FUNCTIONS (UNCHANGED)
 # ============================================================================
 
 def validate_file(file: UploadFile) -> tuple[bool, str]:
-    """File validation using settings from config"""
     file_ext = os.path.splitext(file.filename)[1].lower()
     if file_ext not in settings.ALLOWED_EXTENSIONS:
         return False, f"Invalid file type. Allowed: {', '.join(settings.ALLOWED_EXTENSIONS)}"
@@ -606,22 +508,32 @@ def validate_file(file: UploadFile) -> tuple[bool, str]:
     
     return True, "OK"
 
-def read_contract_file(file: UploadFile) -> str:
-    """Read contract text from file using DocumentReader"""
-    file_ext = os.path.splitext(file.filename)[1].lower()
-    file_type = "pdf" if file_ext == ".pdf" else "docx" if file_ext == ".docx" else "txt"
+
+def read_contract_file(file) -> str:
+    """
+    Read contract file and return text content.
+    """
+    reader         = DocumentReader()
     
-    reader = DocumentReader()
-    file_contents = reader.read_file(file.file, file_type)
+    # Extract file extension without dot
+    filename       = file.filename.lower()
+    file_extension = Path(filename).suffix.lower().lstrip('.')
     
-    # Handle both string and dict return types from DocumentReader
-    if isinstance(file_contents, dict):
-        return file_contents.get('text', '') or file_contents.get('content', '')
-    else:
-        return str(file_contents)
+    # If no extension found, try to detect from content or default to pdf
+    if not file_extension:
+        file_extension = "pdf"
+        print(f"📁 DEBUG app.py - No extension found, defaulting to: '{file_extension}'")
+    
+    file_contents = reader.read_file(file.file, file_extension)
+    
+    if (not file_contents or not file_contents.strip()):
+        raise ValueError("Could not extract text from file")
+        
+    return file_contents
+
+
 
 def validate_contract_text(text: str) -> tuple[bool, str]:
-    """Validate contract text using settings"""
     if not text or not text.strip():
         return False, "Contract text is empty"
     
@@ -634,17 +546,15 @@ def validate_contract_text(text: str) -> tuple[bool, str]:
     return True, "OK"
 
 # ============================================================================
-# API ROUTES
+# API ROUTES (UNCHANGED INTERFACE, UPDATED IMPLEMENTATION)
 # ============================================================================
 
 @app.get("/")
 async def serve_frontend():
-    """Serve the frontend"""
     return FileResponse(str(STATIC_DIR / "index.html"))
 
 @app.get("/api/v1/health", response_model=HealthResponse)
 async def health_check():
-    """Health check endpoint with service status"""
     if not analysis_service:
         raise HTTPException(status_code=503, detail="Service not initialized")
     
@@ -661,7 +571,6 @@ async def health_check():
 
 @app.get("/api/v1/status")
 async def get_detailed_status():
-    """Get detailed service status"""
     if not analysis_service:
         raise HTTPException(status_code=503, detail="Service not initialized")
     return analysis_service.get_service_status()
@@ -672,9 +581,8 @@ async def analyze_contract_file(
     max_clauses: int = Form(15),
     interpret_clauses: bool = Form(True),
     generate_negotiation_points: bool = Form(True),
-    compare_to_market: bool = Form(True)
+    compare_to_market: bool = Form(False)  # Disabled for now
 ):
-    """Analyze uploaded contract file - DIRECT SYNC FLOW"""
     if not analysis_service:
         raise HTTPException(status_code=503, detail="Service not initialized")
     
@@ -707,7 +615,7 @@ async def analyze_contract_file(
             compare_to_market=compare_to_market
         )
         
-        # Perform analysis (SYNCHRONOUS with pre-loaded services)
+        # Perform analysis
         result = analysis_service.analyze_contract(contract_text, options)
         
         log_info(f"File analysis completed", 
@@ -729,9 +637,8 @@ async def analyze_contract_text(
     max_clauses: int = Form(15),
     interpret_clauses: bool = Form(True),
     generate_negotiation_points: bool = Form(True),
-    compare_to_market: bool = Form(True)
+    compare_to_market: bool = Form(False)  # Disabled for now
 ):
-    """Analyze pasted contract text - DIRECT SYNC FLOW"""
     if not analysis_service:
         raise HTTPException(status_code=503, detail="Service not initialized")
     
@@ -746,7 +653,6 @@ async def analyze_contract_text(
         is_valid_contract, validation_type, message = validator.is_valid_contract(contract_text)
         
         if not is_valid_contract:
-            # Use consistent error message format
             error_message = message if "does not appear to be a legal contract" in message else "The provided document does not appear to be a legal contract. Please upload a valid contract for analysis."
             raise HTTPException(status_code=400, detail=error_message)
                 
@@ -758,7 +664,7 @@ async def analyze_contract_text(
             compare_to_market=compare_to_market
         )
         
-        # Perform analysis (SYNCHRONOUS with pre-loaded services)
+        # Perform analysis
         result = analysis_service.analyze_contract(contract_text, options)
         
         log_info(f"Text analysis completed", 
@@ -773,10 +679,8 @@ async def analyze_contract_text(
         log_error(f"Text analysis failed: {e}")
         raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
 
-        
 @app.post("/api/v1/generate-pdf")
 async def generate_pdf_from_analysis(analysis_result: Dict[str, Any]):
-    """Generate PDF from analysis results"""
     try:
         pdf_buffer = generate_pdf_report(analysis_result)
         
@@ -794,7 +698,6 @@ async def generate_pdf_from_analysis(analysis_result: Dict[str, Any]):
 
 @app.get("/api/v1/categories")
 async def get_contract_categories():
-    """Get list of supported contract categories"""
     if not analysis_service:
         raise HTTPException(status_code=503, detail="Service not initialized")
     
@@ -807,7 +710,6 @@ async def get_contract_categories():
 
 @app.post("/api/v1/validate/file", response_model=FileValidationResponse)
 async def validate_contract_file(file: UploadFile = File(...)):
-    """Quick validation endpoint"""
     try:
         is_valid, message = validate_file(file)
         if not is_valid:
@@ -837,7 +739,6 @@ async def validate_contract_file(file: UploadFile = File(...)):
 
 @app.post("/api/v1/validate/text", response_model=FileValidationResponse)
 async def validate_contract_text_endpoint(contract_text: str = Form(...)):
-    """Validate pasted contract text"""
     try:
         # Validate text length
         is_valid, message = validate_contract_text(contract_text)
@@ -860,12 +761,11 @@ async def validate_contract_text_endpoint(contract_text: str = Form(...)):
         raise HTTPException(status_code=400, detail=f"Validation failed: {str(e)}")
 
 # ============================================================================
-# ERROR HANDLERS
+# ERROR HANDLERS AND MIDDLEWARE (UNCHANGED)
 # ============================================================================
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request, exc):
-    """Handle HTTP exceptions"""
     return NumpyJSONResponse(
         status_code=exc.status_code,
         content=ErrorResponse(
@@ -877,7 +777,6 @@ async def http_exception_handler(request, exc):
 
 @app.exception_handler(Exception)
 async def general_exception_handler(request, exc):
-    """Handle general exceptions"""
     log_error(f"Unhandled exception: {exc}")
     return NumpyJSONResponse(
         status_code=500,
@@ -887,10 +786,6 @@ async def general_exception_handler(request, exc):
             timestamp=datetime.now().isoformat()
         ).dict()
     )
-
-# ============================================================================
-# REQUEST LOGGING MIDDLEWARE
-# ============================================================================
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
@@ -903,7 +798,7 @@ async def log_requests(request: Request, call_next):
     return response
 
 # ============================================================================
-# MAIN
+# MAIN (UNCHANGED)
 # ============================================================================
 if __name__ == "__main__":
     def signal_handler(sig, frame):

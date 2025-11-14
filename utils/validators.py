@@ -101,6 +101,7 @@ class ContractValidator:
         Arguments:
         ----------
             text       { str } : Document text to validate
+            
             min_length { int } : Minimum length override (optional)
         
         Returns:
