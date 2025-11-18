@@ -259,7 +259,7 @@ GPU: Optional (3x speedup with NVIDIA GPU + CUDA 11.8+)
 
 ```bash
 # Clone repository
-git clone https://github.com/satyaki-mitra/contract-guard-ai.git  
+git clone https://github.com/itobuztech/contract-guard-ai.git  
 cd contract-guard-ai
 
 # Create virtual environment
@@ -271,6 +271,8 @@ pip install -r requirements.txt
 
 # Download spaCy model (optional, for advanced text processing)
 python -m spacy download en_core_web_sm
+
+curl -fsSL https://ollama.ai/install.sh | sh
 
 # Initialize models (on first run)
 python -c "from model_manager.model_loader import ModelLoader; ModelLoader()"
@@ -395,6 +397,7 @@ contract-guard-ai/
 │
 ├── services/                   # Business logic services
 │   ├── __init__.py
+│   ├── data_models.py          # All services' dataclass schema
 │   ├── contract_classifier.py  # Contract type classification
 │   ├── clause_extractor.py     # Clause extraction (Legal-BERT)
 │   ├── risk_analyzer.py        # Multi-factor risk scoring
