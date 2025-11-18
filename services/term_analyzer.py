@@ -7,7 +7,6 @@ from typing import Tuple
 from pathlib import Path
 from typing import Optional
 from collections import Counter
-from dataclasses import dataclass
 
 # Add parent directory to path for imports
 sys.path.append(str(Path(__file__).parent.parent))
@@ -17,43 +16,8 @@ from utils.logger import log_error
 from config.risk_rules import RiskRules
 from config.risk_rules import ContractType
 from utils.logger import ContractAnalyzerLogger
-from services.clause_extractor import ExtractedClause
-
-
-@dataclass
-class UnfavorableTerm:
-    """
-    Detected unfavorable term with comprehensive risk analysis
-    """
-    term             : str
-    category         : str
-    severity         : str    # "critical", "high", "medium", "low"
-    explanation      : str
-    risk_score       : float  # 0-100 risk score
-    clause_reference : Optional[str] = None
-    suggested_fix    : Optional[str] = None
-    contract_type    : Optional[str] = None
-    specific_text    : Optional[str] = None
-    benchmark_info   : Optional[str] = None  # Industry benchmark comparison
-    legal_basis      : Optional[str] = None  # Legal principle violated
-    
-    def to_dict(self) -> Dict:
-        """
-        Convert to dictionary
-        """
-        return {"term"             : self.term,
-                "category"         : self.category,
-                "severity"         : self.severity,
-                "explanation"      : self.explanation,
-                "risk_score"       : round(self.risk_score, 2),
-                "clause_reference" : self.clause_reference,
-                "suggested_fix"    : self.suggested_fix,
-                "contract_type"    : self.contract_type,
-                "specific_text"    : self.specific_text,
-                "benchmark_info"   : self.benchmark_info,
-                "legal_basis"      : self.legal_basis,
-               }
-
+from services.data_models import ExtractedClause
+from services.data_models import UnfavorableTerm
 
 
 class TermAnalyzer:
@@ -79,6 +43,35 @@ class TermAnalyzer:
                  contract_type    = contract_type.value,
                  category_weights = self.category_weights,
                 )
+
+    
+    def _map_to_risk_category(self, clause_category: str) -> str:
+        """
+        Map clause category to risk category for proper risk scoring for ensureing unfavorable terms are correctly attributed to risk categories
+        for score calculation
+        """
+        # Clause categories → Risk categories
+        mapping                          = {"non_compete"           : "restrictive_covenants",
+                                            "confidentiality"       : "restrictive_covenants",
+                                            "termination"           : "termination_rights",
+                                            "indemnification"       : "liability_indemnity",
+                                            "liability"             : "penalties_liability",
+                                            "compensation"          : "compensation_benefits",
+                                            "intellectual_property" : "intellectual_property",
+                                            "warranty"              : "warranties",
+                                            "dispute_resolution"    : "dispute_resolution",
+                                            "assignment"            : "assignment_change",
+                                            "amendment"             : "assignment_change",
+                                            "insurance"             : "insurance",
+                                            "force_majeure"         : "force_majeure",
+                                            "general"               : "general",
+                                            "payment"               : "payment_terms",
+                                            "governing_law"         : "governing_law",
+                                           }
+
+        risk_category_by_clause_category = mapping.get(clause_category, clause_category)
+        
+        return risk_category_by_clause_category
     
 
     @ContractAnalyzerLogger.log_execution_time("analyze_unfavorable_terms")
@@ -148,6 +141,9 @@ class TermAnalyzer:
         terms      = list()
         text_lower = clause.text.lower()
         
+        # Map clause category to risk category for consistency
+        risk_category = self._map_to_risk_category(clause_category = clause.category)
+        
         # Risky Patterns Analysis from RiskRules
         for pattern, risk_score, description in self.risk_rules.RISKY_PATTERNS:
             matches = re.finditer(pattern, text_lower, re.IGNORECASE)
@@ -156,7 +152,7 @@ class TermAnalyzer:
                 severity = self._score_to_severity(risk_score)
                 
                 terms.append(UnfavorableTerm(term             = description,
-                                             category         = clause.category,
+                                             category         = risk_category,
                                              severity         = severity,
                                              explanation      = self._generate_pattern_explanation(description, match.group()),
                                              risk_score       = risk_score,
@@ -174,7 +170,7 @@ class TermAnalyzer:
                 severity = self._score_to_severity(risk_score)
                 
                 terms.append(UnfavorableTerm(term             = f"Critical Risk: {keyword.title()}",
-                                             category         = clause.category,
+                                             category         = risk_category,
                                              severity         = severity,
                                              explanation      = self._generate_keyword_explanation(keyword, clause.category),
                                              risk_score       = risk_score,
@@ -192,7 +188,7 @@ class TermAnalyzer:
                 severity = self._score_to_severity(risk_score)
                 
                 terms.append(UnfavorableTerm(term             = f"High Risk: {keyword.title()}",
-                                             category         = clause.category,
+                                             category         = risk_category, 
                                              severity         = severity,
                                              explanation      = self._generate_keyword_explanation(keyword, clause.category),
                                              risk_score       = risk_score,
@@ -232,13 +228,16 @@ class TermAnalyzer:
                             'force_majeure'         : 'force_majeure',
                            }
         
-        risk_category = category_mapping.get(clause.category)
-        if not risk_category or risk_category not in self.risk_rules.CLAUSE_RISK_FACTORS:
+        risk_factors_key = category_mapping.get(clause.category)
+        if not risk_factors_key or risk_factors_key not in self.risk_rules.CLAUSE_RISK_FACTORS:
             return terms
         
-        risk_factors = self.risk_rules.CLAUSE_RISK_FACTORS[risk_category]
+        risk_factors = self.risk_rules.CLAUSE_RISK_FACTORS[risk_factors_key]
         text_lower   = clause.text.lower()
         
+        # Map clause category to risk category for consistency
+        risk_category = self._map_to_risk_category(clause_category = clause.category)
+
         # Check for red flags in this clause
         for red_flag, risk_adjustment in risk_factors["red_flags"].items():
             if (red_flag in text_lower):
@@ -247,12 +246,12 @@ class TermAnalyzer:
                 severity     = self._score_to_severity(total_risk)
                 
                 terms.append(UnfavorableTerm(term             = f"Risk Factor: {red_flag.replace('_', ' ').title()}",
-                                             category         = clause.category,
+                                             category         = risk_category,
                                              severity         = severity,
-                                             explanation      = f"Base risk {base_risk} + {risk_adjustment} for '{red_flag}'. {self._get_risk_factor_explanation(risk_category, red_flag)}",
+                                             explanation      = f"Base risk {base_risk} + {risk_adjustment} for '{red_flag}'. {self._get_risk_factor_explanation(risk_factors_key, red_flag)}",
                                              risk_score       = total_risk,
                                              clause_reference = clause.reference,
-                                             suggested_fix    = self._get_risk_factor_fix(risk_category, red_flag),
+                                             suggested_fix    = self._get_risk_factor_fix(risk_factors_key, red_flag),
                                              contract_type    = self.contract_type.value,
                                              specific_text    = red_flag,
                                              legal_basis      = self._get_legal_basis(red_flag)
@@ -271,20 +270,31 @@ class TermAnalyzer:
         # Notice period imbalance (from your original but enhanced)
         notice_imbalance = self._check_notice_imbalance(clauses = clauses)
         if notice_imbalance:
+            # Ensure the category used is a risk category
+            notice_imbalance.category = self._map_to_risk_category(clause_category = "termination") 
             terms.append(notice_imbalance)
         
         # Missing reciprocal provisions
         missing_reciprocal = self._check_missing_reciprocal(text    = text, 
                                                             clauses = clauses,
                                                            )
+        for item in missing_reciprocal:
+            # Ensure the category used is a risk category
+            item.category = self._map_to_risk_category(clause_category = "indemnification")
         terms.extend(missing_reciprocal)
         
         # Conflicting clauses
         conflicts = self._check_conflicting_clauses(clauses = clauses)
+        for item in conflicts:
+            # Ensure the category used is a risk category
+            item.category = self._map_to_risk_category(clause_category = item.category) 
         terms.extend(conflicts)
         
         # One-sided discretionary powers
         one_sided_powers = self._check_one_sided_discretion(clauses = clauses)
+        for item in one_sided_powers:
+            # Ensure the category used is a risk category
+            item.category = self._map_to_risk_category(clause_category = item.category)
         terms.extend(one_sided_powers)
         
         return terms
@@ -298,8 +308,12 @@ class TermAnalyzer:
         
         for protection, config in self.risk_rules.PROTECTION_CHECKLIST.items():
             if not self._has_protection(clauses, protection, config['categories']):
+                # For missing protections, map the first associated category to a risk category
+                # This assumes config['categories'][0] is a clause category like "termination"
+                risk_category = self._map_to_risk_category(clause_category = config['categories'][0]) if config['categories'] else "general"
+                
                 terms.append(UnfavorableTerm(term             = f"Missing Protection: {protection.replace('_', ' ').title()}",
-                                             category         = config['categories'][0] if config['categories'] else "general",
+                                             category         = risk_category,
                                              severity         = self._score_to_severity(config['risk_if_missing']),
                                              explanation      = f"Missing critical protection: {protection}. {self._get_missing_protection_explanation(protection)}",
                                              risk_score       = config['risk_if_missing'],
@@ -320,6 +334,10 @@ class TermAnalyzer:
         
         for clause in clauses:
             benchmark_issues = self._check_benchmark_compliance(clause = clause)
+            for item in benchmark_issues:
+                # Ensure the category used is a risk category
+                item.category = self._map_to_risk_category(clause_category = clause.category) 
+
             terms.extend(benchmark_issues)
         
         return terms
@@ -355,11 +373,14 @@ class TermAnalyzer:
             ratio      = max_period / min_period
             
             if (ratio >= 2):
-                severity   = "critical" if (ratio >= 3) else "high"
-                risk_score = 80 if (ratio >= 3) else 60
+                severity      = "critical" if (ratio >= 3) else "high"
+                risk_score    = 80 if (ratio >= 3) else 60
+                
+                # Use the risk category mapping for termination
+                risk_category = self._map_to_risk_category(clause_category = "termination")
                 
                 return UnfavorableTerm(term             = "Imbalanced Notice Periods",
-                                       category         = "termination",
+                                       category         = risk_category,
                                        severity         = severity,
                                        explanation      = f"Significant notice period imbalance: {max_period} days vs {min_period} days (ratio: {ratio:.1f}x). Creates unfair burden.",
                                        risk_score       = risk_score,
@@ -386,8 +407,11 @@ class TermAnalyzer:
             has_mutual    = any("mutual" in c.text.lower() or "both parties" in c.text.lower() or "each party" in c.text.lower() for c in indem_clauses)
             
             if has_one_sided and not has_mutual:
+                # Use the risk category mapping for indemnification
+                risk_category = self._map_to_risk_category(clause_category = "indemnification")
+                
                 terms.append(UnfavorableTerm(term             = "Non-Reciprocal Indemnification",
-                                             category         = "indemnification", 
+                                             category         = risk_category,
                                              severity         = "critical",
                                              explanation      = "One-sided indemnification creates unlimited liability exposure without reciprocal protection.",
                                              risk_score       = 85,
@@ -411,19 +435,21 @@ class TermAnalyzer:
         by_category = dict()
 
         for clause in clauses:
-            if clause.category not in by_category:
-                by_category[clause.category] = []
+            # Map the clause category to the risk category for grouping purposes
+            risk_cat = self._map_to_risk_category(clause_category = clause.category)
+            if risk_cat not in by_category:
+                by_category[risk_cat] = []
             
-            by_category[clause.category].append(clause)
+            by_category[risk_cat].append(clause)
         
         # Check for conflicts within each category
-        for category, category_clauses in by_category.items():
+        for risk_category, category_clauses in by_category.items():
             if (len(category_clauses) >= 2):
                 for i, clause1 in enumerate(category_clauses):
                     for clause2 in category_clauses[i+1:]:
                         if (self._are_clauses_conflicting(clause1, clause2)):
-                            terms.append(UnfavorableTerm(term             = f"Conflicting {category.title()} Clauses",
-                                                         category         = category,
+                            terms.append(UnfavorableTerm(term             = f"Conflicting {risk_category.title()} Clauses",
+                                                         category         = risk_category,
                                                          severity         = "high",
                                                          explanation      = f"Clauses {clause1.reference} and {clause2.reference} contain conflicting terms creating legal ambiguity.",
                                                          risk_score       = 70,
@@ -448,8 +474,11 @@ class TermAnalyzer:
             # Look for one-sided discretionary language
             if re.search(r'(sole|absolute|unfettered|unilateral)\s+(discretion|right|authority)', text_lower):
                 if not re.search(r'(mutual|both parties|reasonable)\s+(discretion|agreement)', text_lower):
+                    # Use the risk category mapping for the clause's category
+                    risk_category = self._map_to_risk_category(clause_category = clause.category)
+                    
                     terms.append(UnfavorableTerm(term             = "One-Sided Discretionary Power",
-                                                 category         = clause.category,
+                                                 category         = risk_category,
                                                  severity         = "high",
                                                  explanation      = "Gives one party unilateral decision-making power without accountability standards.",
                                                  risk_score       = 75,
@@ -478,7 +507,7 @@ class TermAnalyzer:
                 unit               = duration_match.group(2)
                 
                 # Convert to months for comparison
-                total_months       = duration * (12 if unit == "year" else 1)
+                total_months       = duration * (12 if (unit == "year") else 1)
                 
                 benchmarks         = self.risk_rules.INDUSTRY_BENCHMARKS.get('non_compete_duration', {})
                 industry_benchmark = benchmarks.get(self.contract_type.value, benchmarks.get('general', {}))
@@ -488,8 +517,11 @@ class TermAnalyzer:
                     excessive  = industry_benchmark.get('excessive', 24)
                     
                     if (total_months > excessive):
+                        # Use the risk category mapping for non_compete
+                        risk_category = self._map_to_risk_category(clause_category = clause.category)
+                        
                         terms.append(UnfavorableTerm(term             = "Excessive Non-Compete Duration",
-                                                     category         = clause.category,
+                                                     category         = risk_category,
                                                      severity         = "critical",
                                                      explanation      = f"{duration} {unit} non-compete exceeds industry excessive threshold of {excessive} months.",
                                                      risk_score       = 90,

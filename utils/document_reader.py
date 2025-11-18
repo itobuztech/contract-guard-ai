@@ -73,11 +73,6 @@ class DocumentReader:
         # Normalize file_type by removing any dots and converting to lowercase
         normalized_file_type = file_type.lower().replace('.', '')
 
-        # Validate file type USING NORMALIZED TYPE
-        # if (normalized_file_type not in DocumentReader.ALLOWED_TYPES):
-        #     allowed_str = ', '.join(f'.{ft}' for ft in DocumentReader.ALLOWED_TYPES)
-        #     raise ValueError(f"Unsupported file type: {file_type}. Allowed types: {allowed_str}")
-        
         # Validate file size
         DocumentReader._validate_file_size(file_path_or_bytes = file_path_or_bytes)
 

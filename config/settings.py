@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     
     # File Upload Settings
     MAX_UPLOAD_SIZE        : int           = 10 * 1024 * 1024  # 10 MB
-    ALLOWED_EXTENSIONS     : list          = ["pdf", "docx", "txt"]
+    ALLOWED_EXTENSIONS     : list          = [".pdf", ".docx", ".txt"]
     UPLOAD_DIR             : Path          = Path("uploads")
     
     # Model Management Settings

@@ -9,8 +9,6 @@ from typing import Dict
 from typing import Tuple
 from pathlib import Path
 from typing import Optional
-from dataclasses import field
-from dataclasses import dataclass
 from collections import defaultdict
 from sentence_transformers import util
 
@@ -23,44 +21,9 @@ from config.risk_rules import RiskRules
 from config.risk_rules import ContractType
 from utils.text_processor import TextProcessor
 from utils.logger import ContractAnalyzerLogger
+from services.data_models import ExtractedClause
 from model_manager.model_loader import ModelLoader
-
-
-@dataclass
-class ExtractedClause:
-    """
-    Extracted clause with comprehensive metadata
-    """
-    text              : str
-    reference         : str    # e.g., "Section 5.2", "Clause 11.1"
-    category          : str    # e.g., "termination", "compensation", "indemnification"
-    confidence        : float  # 0.0-1.0
-    start_pos         : int
-    end_pos           : int
-    extraction_method : str    # "structural", "semantic", "hybrid"
-    risk_indicators   : List[str]            = field(default_factory = list)
-    embeddings        : Optional[np.ndarray] = None
-    subclauses        : List[str]            = field(default_factory = list)
-    legal_bert_score  : float                = 0.0
-    risk_score        : float                = 0.0  
-    
-    def to_dict(self) -> Dict[str, Any]:
-        """
-        Convert to dictionary for serialization
-        """
-        return {"text"              : self.text,
-                "reference"         : self.reference,
-                "category"          : self.category,
-                "confidence"        : round(self.confidence, 3),
-                "start_pos"         : self.start_pos,
-                "end_pos"           : self.end_pos,
-                "extraction_method" : self.extraction_method,
-                "risk_indicators"   : self.risk_indicators,
-                "subclauses"        : self.subclauses,
-                "legal_bert_score"  : round(self.legal_bert_score, 3),
-                "risk_score"        : round(self.risk_score, 3),
-               }
-
+from services.data_models import ClauseInterpretation
 
 
 class ComprehensiveClauseExtractor:
@@ -140,12 +103,6 @@ class ComprehensiveClauseExtractor:
                                                    }
                         }
     
-    # RISK INDICATOR PATTERNS - ENHANCED
-    RISK_INDICATORS   = {'critical' : ['unlimited liability', 'perpetual', 'irrevocable', 'forfeit', 'liquidated damages', 'wage withholding', 'joint and several', 'automatic renewal', 'assignment without consent'],
-                         'high'     : ['non-compete', 'non-solicit', 'penalty', 'without cause', 'sole discretion', 'immediate termination', 'at-will', 'indemnify', 'hold harmless', 'waive'],
-                         'medium'   : ['confidential', 'proprietary', 'exclusive', 'terminate', 'default', 'breach', 'damages', 'liable', 'warranty disclaimer'],
-                        }
-    
 
     def __init__(self, model_loader: ModelLoader):
         """
@@ -174,6 +131,9 @@ class ComprehensiveClauseExtractor:
         
         # Lazy load
         self._lazy_load()
+
+        # Risk Rules 
+        self.risk_rules           = RiskRules()
     
 
     def _lazy_load(self):
@@ -288,6 +248,109 @@ class ComprehensiveClauseExtractor:
         
         return final_clauses
     
+
+    def generate_clause_analysis(self, clause: ExtractedClause, llm_interpretation: ClauseInterpretation = None) -> Dict[str, str]:
+        """
+        Generate analysis and recommendation for a clause
+        
+        Arguments:
+        ----------
+            clause               { ExtractedClause }    : ExtractedClause object
+
+            llm_interpretation { ClauseInterpretation } : Optional ClauseInterpretation from LLM
+        
+        Returns:
+        --------
+                           { dict }                     : Dictionary with 'analysis' and 'recommendation' keys
+        """
+        if llm_interpretation:
+            # Use LLM interpretation if available
+            analysis = llm_interpretation.plain_english_summary
+            
+            # Combine key points into analysis
+            if llm_interpretation.key_points:
+                analysis += " " + " ".join(llm_interpretation.key_points[:2])
+            
+            # Combine potential risks into analysis
+            if llm_interpretation.potential_risks:
+                risk_text = " Key risks: " + ", ".join(llm_interpretation.potential_risks[:2])
+                analysis += risk_text
+            
+            # Use suggested improvements as recommendation
+            if llm_interpretation.suggested_improvements:
+                recommendation = " ".join(llm_interpretation.suggested_improvements[:2])
+            
+            else:
+                recommendation = "Review this clause with legal counsel for specific recommendations."
+        
+        else:
+            # Fallback: Generate analysis from risk indicators and category
+            risk_indicators = clause.risk_indicators if clause.risk_indicators else []
+            risk_score      = getattr(clause, 'risk_score', 0)
+            
+            # Generate specific analysis based on category and risk
+            analysis        = self._generate_fallback_analysis(clause          = clause, 
+                                                               risk_indicators = risk_indicators, 
+                                                               risk_score      = risk_score,
+                                                              )
+
+            recommendation  = self._generate_fallback_recommendation(clause          = clause, 
+                                                                     risk_indicators = risk_indicators, 
+                                                                     risk_score      = risk_score,
+                                                                    )
+        
+        return {'analysis'       : analysis,
+                'recommendation' : recommendation,
+               }
+
+
+    def _generate_fallback_analysis(self, clause: ExtractedClause, risk_indicators: List[str], risk_score: float) -> str:
+        """
+        Generate fallback analysis when LLM unavailable
+        """
+        category_analyses = {'compensation'          : f"This compensation clause {'contains concerning terms' if risk_score > 50 else 'appears standard'} regarding payment obligations and structures. ",
+                             'termination'           : f"This termination clause {'creates significant imbalance' if risk_score > 60 else 'establishes'} the conditions and procedures for ending the agreement. ",
+                             'non_compete'           : f"This restrictive covenant {'is overly broad and' if risk_score > 60 else ''} limits future business activities and employment opportunities. ",
+                             'confidentiality'       : f"This confidentiality provision {'has excessive scope' if risk_score > 50 else 'defines'} the obligations to protect sensitive information. ",
+                             'indemnification'       : f"This indemnification clause {'creates one-sided liability exposure' if risk_score > 60 else 'allocates'} responsibility for claims and losses. ",
+                             'intellectual_property' : f"This IP clause {'may claim overly broad ownership' if risk_score > 50 else 'addresses'} rights to work product and inventions. ",
+                             'liability'             : f"This liability provision {'lacks adequate caps or limitations' if risk_score > 60 else 'establishes'} the financial exposure for damages. ",
+                            }
+        
+        analysis          = category_analyses.get(clause.category, f"This {clause.category} clause establishes specific rights and obligations. ")
+        
+        # Add risk-specific details
+        if risk_indicators:
+            analysis += f"Specific concerns include: {', '.join(risk_indicators[:3])}. "
+        
+        if (risk_score > 70):
+            analysis += "This clause requires immediate attention and likely modification."
+
+        elif (risk_score > 50):
+            analysis += "This clause should be reviewed carefully and potentially negotiated."
+
+        else:
+            analysis += "This clause appears to contain standard provisions for this type of agreement."
+        
+        return analysis
+
+
+    def _generate_fallback_recommendation(self, clause: ExtractedClause, risk_indicators: List[str], risk_score: float) -> str:
+        """
+        Generate fallback recommendation when LLM unavailable
+        """
+        if (risk_score > 70):
+            return f"Strongly recommend negotiating substantial changes to this clause. Seek legal counsel to address the identified risks and ensure your interests are protected."
+        
+        elif (risk_score > 50):
+            return f"Negotiate modifications to balance the terms more fairly. Consider adding protective language or limiting the scope of obligations."
+        
+        elif (risk_score > 30):
+            return f"Review with legal counsel to ensure the terms are clear and acceptable. Minor clarifications may be beneficial."
+        
+        else:
+            return f"Standard clause - review for consistency with the overall agreement and your business needs."
+
     
     def _extract_structural_clauses(self, text: str) -> List[Dict]:
         """
@@ -584,17 +647,42 @@ class ComprehensiveClauseExtractor:
 
     def _extract_risk_indicators(self, text: str) -> List[str]:
         """
-        Extract risk indicator keywords from clause text
+        Extract risk indicator keywords from clause text using RiskRule with the central risk rules
         """
         text_lower      = text.lower()
         risk_indicators = list()
+
+        # Check for matches against CRITICAL_KEYWORDS from RiskRules
+        for keyword in self.risk_rules.CRITICAL_KEYWORDS.keys():
+            if keyword in text_lower:
+                risk_indicators.append(keyword)
+
+        # Check for matches against HIGH_RISK_KEYWORDS from RiskRules
+        for keyword in self.risk_rules.HIGH_RISK_KEYWORDS.keys():
+            if keyword in text_lower:
+                risk_indicators.append(keyword)
+
+        # Check for matches against MEDIUM_RISK_KEYWORDS from RiskRules
+        for keyword in self.risk_rules.MEDIUM_RISK_KEYWORDS.keys():
+            if keyword in text_lower:
+                risk_indicators.append(keyword)
+
+        # Check for matches against RISKY_PATTERNS from RiskRules
+        for pattern, score, description in self.risk_rules.RISKY_PATTERNS:
+            if re.search(pattern, text_lower):
+                # Use the description from RiskRules as the indicator
+                risk_indicators.append(description)
+
+        # Remove duplicates while preserving order
+        seen              = set()
+        unique_indicators = list()
+
+        for indicator in risk_indicators:
+            if indicator not in seen:
+                seen.add(indicator)
+                unique_indicators.append(indicator)
         
-        for severity, indicators in self.RISK_INDICATORS.items():
-            for indicator in indicators:
-                if indicator in text_lower:
-                    risk_indicators.append(indicator)
-        
-        return risk_indicators  
+        return unique_indicators
     
 
     def _extract_subclauses(self, text: str) -> List[str]:
@@ -699,8 +787,7 @@ class ComprehensiveClauseExtractor:
 
 class RiskClauseExtractor:
     """
-    Risk-Focused Clause Extractor: Specifically for risk analysis using RiskRules framework and integrates with
-    risk_rules.py for contract-type specific risk assessment
+    Risk-Focused Clause Extractor: Specifically for risk analysis using RiskRules framework for contract-type specific risk assessment
     
     This will be used for: Risk analysis, protection gap detection, contract-type specific assessment
     """
@@ -955,7 +1042,7 @@ class RiskClauseExtractor:
         Calculate risk scores for clauses based on RiskRules factors
         """
         for clause in clauses:
-            risk_score        = self._calculate_single_clause_risk(clause)
+            risk_score        = self._calculate_single_clause_risk(clause = clause)
             clause.risk_score = risk_score
         
         return clauses
@@ -963,29 +1050,35 @@ class RiskClauseExtractor:
 
     def _calculate_single_clause_risk(self, clause: ExtractedClause) -> float:
         """
-        Calculate risk score for a single clause
+        Calculate risk score using RiskRules framework
         """
-        base_risk       = 0.0
-        
-        # Base risk from category weight
+        base_score      = 0.0
+        text_lower      = clause.text.lower()
+
+        # Base risk from category weight (adjusted for contract type)
         category_weight = self.category_weights.get(clause.category, 1.0)
+        base_score     += category_weight  
 
-        # Normalize to 0-40
-        base_risk      += (category_weight / 15) * 40  
+        # Add risk from CLAUSE_RISK_FACTORS (red flags)
+        factor_config   = self.risk_rules.CLAUSE_RISK_FACTORS.get(clause.category)
         
-        # Risk from indicators
-        risk_indicators = self._extract_risk_indicators(clause.text)
+        if factor_config:
+            for red_flag, adjustment in factor_config["red_flags"].items():
+                if red_flag in text_lower:
+                    base_score += adjustment
 
-        # 8 points per indicator
-        indicator_risk  = len(risk_indicators) * 8  
-        base_risk      += min(indicator_risk, 40)
-        
-        # Risk from patterns
-        pattern_risk    = self._check_risk_patterns(clause.text)
-        base_risk      += pattern_risk
-        
-        # Cap at 100
-        return min(base_risk, 100) 
+        # Add risk from RISKY_PATTERNS (with actual scores)
+        for pattern, score, description in self.risk_rules.RISKY_PATTERNS:
+            if re.search(pattern, text_lower):
+                base_score += score
+
+        # Add risk from CRITICAL_KEYWORDS
+        for keyword, risk_score in self.risk_rules.CRITICAL_KEYWORDS.items():
+            if re.search(rf'\b{re.escape(keyword)}\b', text_lower):
+                base_score += risk_score
+
+        # Cap final score at 100
+        return min(max(base_score, 0), 100)
     
 
     def _extract_risk_indicators(self, text: str) -> List[str]:

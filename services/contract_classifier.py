@@ -21,31 +21,7 @@ from config.risk_rules import ContractType
 from config.model_config import ModelConfig
 from utils.text_processor import TextProcessor
 from utils.logger import ContractAnalyzerLogger
-
-
-@dataclass
-class ContractCategory:
-    """
-    Contract classification result with metadata
-    """
-    category               : str
-    subcategory            : Optional[str]
-    confidence             : float
-    reasoning              : List[str]
-    detected_keywords      : List[str]
-    alternative_categories : List[Tuple[str, float]] = None  # (category, confidence) pairs
-    
-    def to_dict(self) -> Dict[str, Any]:
-        """
-        Convert to dictionary for serialization
-        """
-        return {"category"               : self.category,
-                "subcategory"            : self.subcategory,
-                "confidence"             : round(self.confidence, 3),
-                "reasoning"              : self.reasoning,
-                "detected_keywords"      : self.detected_keywords,
-                "alternative_categories" : [{"category": cat, "confidence": round(conf, 3)} for cat, conf in (self.alternative_categories or [])]
-               }
+from services.data_models import ContractCategory
 
 
 class ContractClassifier:
@@ -59,15 +35,15 @@ class ContractClassifier:
     # CATEGORY HIERARCHY WITH KEYWORDS - UPDATED TO MATCH YOUR CATEGORIES
     CATEGORY_HIERARCHY   = {'employment'            : {'subcategories' : ['full_time', 'part_time', 'contract_worker', 'internship', 'executive'],
                                                        'keywords'      : ['employee', 'employment', 'employer', 'job', 'position', 'staff', 'salary', 'wages', 'compensation', 'payroll', 'benefits', 'health insurance', 'retirement', 'pension', '401(k)', 'vacation', 'paid time off', 'sick leave', 'holidays', 'probation', 'performance review', 'promotion', 'termination', 'job description', 'duties', 'responsibilities', 'work hours', 'overtime', 'timekeeping', 'attendance', 'confidentiality', 'non-compete', 'non-solicitation', 'intellectual property', 'inventions', 'work product', 'severance', 'notice period', 'resignation', 'dismissal'],
-                                                       'weight'        : 1.2,
+                                                       'weight'        : 1.1,
                                                       },
                             'consulting'            : {'subcategories' : ['independent_contractor', 'advisory', 'professional_services', 'freelance'],
                                                        'keywords'      : ['consultant', 'consulting', 'independent contractor', 'statement of work', 'deliverables', 'professional services', 'hourly rate', 'project scope', 'milestone', 'acceptance criteria', 'work product', '1099', 'self-employed', 'contractor', 'consulting services', 'expert advice', 'advisory services', 'project basis', 'task order'],
-                                                       'weight'        : 1.1,
+                                                       'weight'        : 1.0,
                                                       },
                             'nda'                   : {'subcategories' : ['mutual_nda', 'unilateral_nda', 'confidentiality_agreement'],
                                                        'keywords'      : ['non-disclosure', 'confidentiality', 'proprietary information', 'nda', 'disclosure agreement', 'trade secret', 'confidential information', 'receiving party', 'disclosing party', 'confidentiality obligation', 'non-use', 'non-circumvention', 'secrecy', 'protected information', 'confidentiality period', 'return of information'],
-                                                       'weight'        : 1.3, 
+                                                       'weight'        : 1.0, 
                                                       },
                             'software'              : {'subcategories' : ['software_license', 'saas', 'cloud_services', 'development', 'api_access'],
                                                        'keywords'      : ['software', 'license', 'saas', 'subscription', 'source code', 'object code', 'api', 'cloud', 'hosting', 'maintenance', 'updates', 'support', 'uptime', 'service level', 'software as a service', 'platform', 'application', 'user license', 'perpetual license', 'subscription fee', 'end user license agreement', 'eula'],
@@ -314,7 +290,6 @@ class ContractClassifier:
 
             { ContractCategory }     : ContractCategory object with classification results
         """
-        
         # Validate input
         if (not contract_text or (len(contract_text) < 100)):
             raise ValueError("Contract text too short for classification")
@@ -331,16 +306,16 @@ class ContractClassifier:
                  excerpt_length = len(text_excerpt),
                 )
         
-        # Step 1: Keyword scoring
+        # Keyword scoring
         keyword_scores    = self._score_keywords(text_lower = contract_text.lower())
-        
+
         # Semantic similarity
         semantic_scores   = self._semantic_similarity(text = text_excerpt)
-        
-        # Step 3: Legal-BERT semantic similarity (enhanced)
+
+        # Legal-BERT semantic similarity (enhanced)
         legal_bert_scores = self._legal_bert_similarity(text = text_excerpt)
-        
-        # Step 4: Combine scores (weighted average)
+
+        # Combine scores (weighted average)
         combined_scores   = self._combine_scores(keyword_scores    = keyword_scores,
                                                  semantic_scores   = semantic_scores,
                                                  legal_bert_scores = legal_bert_scores,
@@ -403,23 +378,23 @@ class ContractClassifier:
     def _score_keywords(self, text_lower: str) -> Dict[str, float]:
         """
         Score each category based on keyword presence
-        
+
         Arguments:
         ----------
             text_lower { str } : Lowercase contract text
-        
+
         Returns:
         --------
                { dict }        : Dictionary of {category: score}
         """
         scores = dict()
-        
         for category, config in self.CATEGORY_HIERARCHY.items():
-            keywords         = config['keywords']
-            weight           = config['weight']
+            keywords      = config['keywords']
+            weight        = config['weight']
             
             # Count keyword matches with partial matching for multi-word terms
-            keyword_count    = 0
+            keyword_count = 0
+            
             for keyword in keywords:
                 # Check for exact match or partial match for multi-word terms
                 if ' ' in keyword:
@@ -429,18 +404,15 @@ class ContractClassifier:
                         keyword_count += 1
                 
                 else:
-                    # For single words, exact match
+                    # For single words, exact word boundary match
                     if re.search(rf'\b{re.escape(keyword)}\b', text_lower):
                         keyword_count += 1
-            
+
             # Normalize by number of keywords and apply weight
             normalized_score = (keyword_count / len(keywords)) * weight
             
-            # Boost score if we have significant keyword matches
-            if keyword_count >= 3:
-                normalized_score *= 1.2
-            
-            scores[category] = min(normalized_score, 1.0)  # Cap at 1.0
+            # Cap at 1.0
+            scores[category] = min(normalized_score, 1.0)
         
         return scores
     
@@ -548,9 +520,9 @@ class ContractClassifier:
         combined          = dict()
         
         # Weights for each method
-        keyword_weight    = 0.45  # Increased from 0.30
-        semantic_weight   = 0.35  # Reduced from 0.40
-        legal_bert_weight = 0.20  # Reduced from 0.30
+        keyword_weight    = 0.35  
+        semantic_weight   = 0.35 
+        legal_bert_weight = 0.30 
         
         for category in self.CATEGORY_HIERARCHY.keys():
             score = (keyword_scores.get(category, 0) * keyword_weight + 

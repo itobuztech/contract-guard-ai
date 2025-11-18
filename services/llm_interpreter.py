@@ -7,7 +7,6 @@ from typing import Dict
 from typing import Tuple
 from pathlib import Path
 from typing import Optional
-from dataclasses import dataclass
 
 # Add parent directory to path for imports
 sys.path.append(str(Path(__file__).parent.parent))
@@ -18,67 +17,12 @@ from config.risk_rules import RiskRules
 from config.risk_rules import ContractType
 from utils.logger import ContractAnalyzerLogger
 from model_manager.llm_manager import LLMManager
+from services.data_models import UnfavorableTerm
 from model_manager.llm_manager import LLMProvider
-from services.term_analyzer import UnfavorableTerm
+from services.data_models import RiskInterpretation
+from services.data_models import ClauseInterpretation
 from services.clause_extractor import ExtractedClause
 from services.protection_checker import MissingProtection
-
-
-
-@dataclass
-class ClauseInterpretation:
-    """
-    Plain-English interpretation of a legal clause with risk context
-    """
-    clause_reference       : str
-    original_text          : str
-    plain_english_summary  : str
-    key_points             : List[str]
-    potential_risks        : List[str]
-    favorability           : str       # "favorable", "neutral", "unfavorable"
-    confidence             : float
-    risk_score             : float     # 0-100 from RiskAnalyzer
-    negotiation_priority   : str       # "high", "medium", "low"
-    suggested_improvements : List[str]
-    
-    def to_dict(self) -> Dict[str, Any]:
-        """
-        Convert to dictionary
-        """
-        return {"clause_reference"       : self.clause_reference,
-                "original_text"          : self.original_text,
-                "plain_english_summary"  : self.plain_english_summary,
-                "key_points"             : self.key_points,
-                "potential_risks"        : self.potential_risks,
-                "favorability"           : self.favorability,
-                "confidence"             : round(self.confidence, 3),
-                "risk_score"             : round(self.risk_score, 2),
-                "negotiation_priority"   : self.negotiation_priority,
-                "suggested_improvements" : self.suggested_improvements,
-               }
-
-
-@dataclass
-class RiskInterpretation:
-    """
-    Comprehensive risk interpretation with LLM-enhanced explanations
-    """
-    overall_risk_explanation : str
-    key_concerns             : List[str]
-    negotiation_strategy     : str
-    market_comparison        : str
-    clause_interpretations   : List[ClauseInterpretation]
-    
-    def to_dict(self) -> Dict[str, Any]:
-        """
-        Convert to dictionary
-        """
-        return {"overall_risk_explanation" : self.overall_risk_explanation,
-                "key_concerns"             : self.key_concerns,
-                "negotiation_strategy"     : self.negotiation_strategy,
-                "market_comparison"        : self.market_comparison,
-                "clause_interpretations"   : [ci.to_dict() for ci in self.clause_interpretations],
-               }
 
 
 class LLMClauseInterpreter:
@@ -92,7 +36,6 @@ class LLMClauseInterpreter:
         Arguments:
         ----------
             llm_manager      { LLMManager }  : LLMManager instance
-
             default_provider { LLMProvider } : Default LLM provider to use
         """
         self.llm_manager      = llm_manager
@@ -293,7 +236,7 @@ class LLMClauseInterpreter:
                                                         key_points             = result.get("key_points", []),
                                                         potential_risks        = result.get("potential_risks", []),
                                                         favorability           = result.get("favorability", "neutral"),
-                                                        confidence             = 0.85,  # High confidence if LLM succeeded
+                                                        confidence_score       = 0.85,  # High confidence if LLM succeeded
                                                         risk_score             = getattr(clause, 'risk_score', 0),
                                                         negotiation_priority   = negotiation_priority,
                                                         suggested_improvements = result.get("suggested_improvements", []),
@@ -316,40 +259,51 @@ class LLMClauseInterpreter:
 
     def _create_interpretation_prompt(self, clause: ExtractedClause) -> str:
         """
-        Create enhanced prompt with risk context for LLM interpretation
+        Create concise prompt for clause interpretation
         """
         risk_context = ""
 
         if clause.risk_indicators:
-            risk_context = f"\nRisk indicators detected: {', '.join(clause.risk_indicators)}"
+            risk_context = f"\nRisk Keywords: {', '.join(clause.risk_indicators[:3])}"
         
         risk_score_context = ""
-        
+
         if hasattr(clause, 'risk_score'):
-            risk_score_context = f"\nRisk score: {clause.risk_score}/100"
+            if (clause.risk_score >= 70):
+                risk_level = "CRITICAL RISK"
+
+            elif (clause.risk_score >= 50):
+                risk_level = "HIGH RISK"
+
+            else:
+                risk_level = "Moderate risk"
+            
+            risk_score_context = f"\nRisk Level: {risk_level} ({clause.risk_score}/100)"
         
         prompt = f"""
-                     You are a legal expert explaining contract clauses to non-lawyers.
+                     Explain this legal clause in plain English.
 
-                     CLAUSE CONTEXT:
-                     - Reference: {clause.reference}
-                     - Category: {clause.category}
-                     - Confidence: {clause.confidence:.2f}{risk_score_context}{risk_context}
+                     CLAUSE: {clause.reference} - {clause.category.replace('_', ' ').title()}{risk_score_context}{risk_context}
 
-                     CLAUSE TEXT:
-                     \"\"\"{clause.text}\"\"\"
+                     TEXT: "{clause.text}..."
 
-                     Provide a plain-English interpretation suitable for someone without legal training:
+                     Provide:
+                     1. SUMMARY: 1-2 sentences explaining what this means
+                     2. KEY_POINTS: 3 bullet points of what to know
+                     3. POTENTIAL_RISKS: 2-3 specific risks or concerns
+                     4. FAVORABILITY: "favorable", "neutral", or "unfavorable"
+                     5. IMPROVEMENTS: 2 specific suggestions to fix this
 
-                     1. SUMMARY: Explain what this clause means in 1-2 simple sentences
-                     2. KEY POINTS: List 3-5 key things to understand about this clause
-                     3. POTENTIAL RISKS: Identify 2-4 potential risks or concerns with this clause
-                     4. FAVORABILITY: Rate as "favorable", "neutral", or "unfavorable" from the recipient's perspective
-                     5. SUGGESTED IMPROVEMENTS: Provide 2-3 specific suggestions to improve this clause
+                     Keep each section CONCISE. Total response should be ~150 words.
 
-                     Focus on practical implications and business impact. Be clear, concise, and actionable.
-
-                     Return ONLY valid JSON.
+                     Return ONLY valid JSON:
+                     {{
+                        "plain_english_summary": "...",
+                        "key_points": ["...", "...", "..."],
+                        "potential_risks": ["...", "..."],
+                        "favorability": "unfavorable",
+                        "suggested_improvements": ["...", "..."]
+                     }}
                   """
         
         return prompt
@@ -365,6 +319,23 @@ class LLMClauseInterpreter:
         elif (favorability == "unfavorable") or ((len(risk_indicators) >= 2) or (risk_score >= 50)):
             return "medium"
 
+        else:
+            return "low"
+
+    
+    def _map_risk_score_to_level(self, risk_score: float) -> str:
+        """
+        Map numeric risk score to risk level string
+        """
+        if (risk_score >= 70):
+            return "critical"
+
+        elif (risk_score >= 50):
+            return "high" 
+
+        elif (risk_score >= 30):
+            return "medium"
+            
         else:
             return "low"
     
@@ -424,43 +395,99 @@ class LLMClauseInterpreter:
                                     key_points             = key_points,
                                     potential_risks        = potential_risks,
                                     favorability           = favorability,
-                                    confidence             = 0.50,  # Medium confidence for fallback
+                                    confidence_score       = 0.50,  # Medium confidence for fallback
                                     risk_score             = risk_score,
                                     negotiation_priority   = negotiation_priority,
                                     suggested_improvements = suggested_improvements,
                                    )
     
 
-    def _generate_overall_risk_explanation(self, overall_risk_score: int, contract_type: ContractType, unfavorable_terms: List[UnfavorableTerm],
-                                           missing_protections: List[MissingProtection], provider: LLMProvider) -> str:
+    def _generate_overall_risk_explanation(self, overall_risk_score: int, contract_type: ContractType, unfavorable_terms: List[UnfavorableTerm], missing_protections: List[MissingProtection], 
+                                           provider: LLMProvider) -> str:
         """
-        Generate overall risk explanation using LLM
+        Generate concise overall risk explanation
         """
+        # Handle both object and dictionary formats for unfavorable_terms
+        critical_terms       = list()
+        high_terms           = list()
+        issues_summary       = list()
+        critical_protections = list()
+        
+        for term in unfavorable_terms:
+            severity = ""
+            
+            if isinstance(term, UnfavorableTerm):
+                severity = term.severity
+            
+            elif isinstance(term, dict):
+                severity = term.get('severity', '')
+            
+            else:
+                severity = getattr(term, 'severity', '')
+                
+            if (severity == "critical"):
+                critical_terms.append(term)
+            
+            elif (severity == "high"):
+                high_terms.append(term)
+        
+        # Handle both object and dictionary formats for missing_protections
+        for protection in missing_protections:
+            importance = ""
+
+            if isinstance(protection, MissingProtection):
+                importance = protection.importance
+            
+            elif isinstance(protection, dict):
+                importance = protection.get('importance', '')
+            
+            else:
+                importance = getattr(protection, 'importance', '')
+                
+            if (importance == "critical"):
+                critical_protections.append(protection)
+        
+        # Create issues summary
+        if critical_terms:
+            issues_summary.append(f"{len(critical_terms)} CRITICAL unfavorable terms")
+        
+        if high_terms:
+            issues_summary.append(f"{len(high_terms)} HIGH-risk unfavorable terms")
+        
+        if critical_protections:
+            issues_summary.append(f"{len(critical_protections)} CRITICAL missing protections")
+        
+        if not issues_summary:
+            issues_summary = ["Multiple concerning provisions identified"]
         
         prompt = f"""
-                     As a legal risk analyst, provide a concise overall risk assessment.
+                   Risk Level: {overall_risk_score}/100 for {contract_type.value} contract
 
-                     CONTRACT TYPE: {contract_type.value}
-                     OVERALL RISK SCORE: {overall_risk_score}/100
-                     UNFAVORABLE TERMS: {len(unfavorable_terms)}
-                     MISSING PROTECTIONS: {len(missing_protections)}
+                   Top Issues:
+                   {chr(10).join(issues_summary)}
 
-                     Provide a 2-3 sentence plain-English explanation of what this risk score means for someone signing this contract. Focus on practical implications.
+                   Write ONE sentence (max 25 words) explaining what this risk score means for someone signing this contract.
 
-                     Explanation:
-                  """
-        
+                   Example: "This contract creates severe financial and legal exposure through unlimited liability and one-sided termination rights."
+
+                   Your turn:
+                """
+                                        
         try:
             response = self.llm_manager.complete(prompt      = prompt,
                                                  provider    = provider,
                                                  temperature = 0.2,
-                                                 max_tokens  = 300,
-                                                )
+                                                 max_tokens  = 100,
+                                                ) 
             
-            return response.text.strip() if response.success else self._fallback_risk_explanation(overall_risk_score)
+            explanation = response.text.strip() if response.success else self._fallback_risk_explanation(overall_risk_score)
+            
+            # Ensure single sentence
+            sentences = explanation.split('.')
+            return sentences[0].strip() + '.' if sentences else explanation
             
         except Exception as e:
-            log_error(e, context = {"operation": "generate_overall_risk_explanation"})
+            log_error(e, context={"operation": "generate_overall_risk_explanation"})
             return self._fallback_risk_explanation(overall_risk_score)
     
 
@@ -488,25 +515,57 @@ class LLMClauseInterpreter:
         concerns       = list()
         
         # From unfavorable terms
-        critical_terms = [t for t in unfavorable_terms if (t.get("severity") == "critical")]
+        critical_terms = list()
+
+        for term in unfavorable_terms:
+            if isinstance(term, UnfavorableTerm):
+                if (term.severity == "critical"):
+                    critical_terms.append(term)
+            
+            elif isinstance(term, dict):
+                if (term.get("severity") == "critical"):
+                    critical_terms.append(term)
         
         # Top 10 critical terms
         for term in critical_terms[:10]:  
-            term_name        = term.get('term', 'Unfavorable term')
-            term_explanation = term.get('explanation', 'Standard risk identified')
+            term_name        = ""
+            term_explanation = ""
+            
+            if isinstance(term, UnfavorableTerm):
+                term_name        = term.term
+                term_explanation = term.explanation
+            
+            elif isinstance(term, dict):
+                term_name        = term.get('term', 'Unfavorable term')
+                term_explanation = term.get('explanation', 'Standard risk identified')
 
             concerns.append(f"Critical: {term_name} - {term_explanation}")
         
         # From missing protections
-        critical_protections = [p for p in missing_protections if (p.get("importance") == "critical")]
+        critical_protections = list()
 
+        for protection in missing_protections:
+            if isinstance(protection, MissingProtection):
+                if (protection.importance == "critical"):
+                    critical_protections.append(protection)
+            
+            elif isinstance(protection, dict):
+                if (protection.get("importance") == "critical"):
+                    critical_protections.append(protection)
+        
         # Top 10 critical protections
         for protection in critical_protections[:10]:  
-            protection_name = protection.get('protection', 'Critical protection')
+            protection_name = ""
             
+            if isinstance(protection, MissingProtection):
+                protection_name = protection.protection
+            
+            elif isinstance(protection, dict):
+                protection_name = protection.get('protection', 'Critical protection')
+
             concerns.append(f"Missing: {protection_name}")
         
-        # From clause interpretations (these are objects, so dot notation is OK here)
+        # From clause interpretations
         high_priority_clauses = [c for c in clause_interpretations if (c.negotiation_priority == "high")]
         
         # Top 10 high priority clauses
@@ -522,7 +581,6 @@ class LLMClauseInterpreter:
         """
         Generate negotiation strategy using LLM
         """
-        
         prompt = f"""
                      As a negotiation expert, provide strategic advice for contract negotiations.
 
@@ -553,7 +611,6 @@ class LLMClauseInterpreter:
         """
         Generate market comparison context
         """
-        
         prompt = f"""
                      Provide market context for this contract type.
 
